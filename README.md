@@ -11,7 +11,8 @@ beyond the lockfile.
   the project once with the network, and records every download, whatever
   CMake command makes it: `FetchContent`, `ExternalProject_Add()`,
   `file(DOWNLOAD)` at configure or build time, and wrappers on top of them
-  such as CPM.cmake. It writes `cmake-purifier.lock.json`.
+  such as CPM.cmake, from HTTP and HTTPS servers and from git, Mercurial,
+  Subversion and CVS repositories. It writes `cmake-purifier.lock.json`.
 - **Sandboxed builds.** `buildCMakeProject`, which the flake's overlay adds
   to a package set, builds and installs the project from its lockfile.
   Its `targets.<name>` and `installed."<path>"` name every output at
@@ -101,18 +102,26 @@ scratch prefix with three recorders:
   runs, with its certificate authority in `SSL_CERT_FILE`. It records every
   response by URL and SHA-256. When the user's environment names a proxy
   of its own, mitmproxy forwards to it.
-- **A git wrapper** in `GIT_EXECUTABLE`, which logs every git command
-  CMake's modules run and passes it to git, with the user's own proxy
-  settings. The log shows which repository each clone fetched and which
-  ref it checked out.
+- **Wrappers of git, hg, svn and cvs**, in `GIT_EXECUTABLE`,
+  `HG_EXECUTABLE`, `Subversion_SVN_EXECUTABLE` and `CVS_EXECUTABLE`. Each
+  logs every command CMake's modules run with its tool and passes it on,
+  with the user's own proxy settings; svn gets them as `--config-option`
+  arguments, since it reads no proxy variables. The logs show which
+  repository each checkout came from and which ref it asked for.
 - **A dependency provider**, injected through
   `CMAKE_PROJECT_TOP_LEVEL_INCLUDES`, which records each
   `FetchContent_MakeAvailable()` dependency by name and where FetchContent
   put it.
 
 The lockfile then holds every file the build fetched over HTTP or HTTPS,
-under the URL the build asked for, and every git checkout at the commit
-the build checked out, hashed the way `fetchgit` checks it. A redirect
+under the URL the build asked for, and every checkout at the revision the
+build checked out. A git checkout is hashed with `nix-prefetch-git`, the
+hash `fetchgit` checks. A Mercurial, Subversion or CVS checkout is hashed
+by building the nixpkgs fetcher of the sandbox build (`fetchhg`,
+`fetchsvn`, `fetchcvs`) with a wrong hash and reading the right one from
+the error, so the hash is the one that build checks, keyword expansion
+and time zone included. A CVS checkout without a tag or a date locks the
+time of the lock run as its date. A redirect
 counts as the file it leads to, and its target is left out, since such
 targets are often signed URLs that expire. The install's manifest gives
 the installed files, and CMake's File API gives the target each one
@@ -137,17 +146,18 @@ locked copy:
   `FETCHCONTENT_FULLY_DISCONNECTED`. The sources are copied into the build
   directory, because some projects write into their dependencies' source
   trees.
-- Git clones go to a git shim, which the initial cache names in
-  `GIT_EXECUTABLE`. It answers the clone, checkout and update steps of
-  `ExternalProject_Add()` and of FetchContent from the locked checkout of
-  the repository and ref.
+- Git, Mercurial, Subversion and CVS checkouts go to shims, which the
+  initial cache names in `GIT_EXECUTABLE`, `HG_EXECUTABLE`,
+  `Subversion_SVN_EXECUTABLE` and `CVS_EXECUTABLE`. They answer the
+  checkout and update steps of `ExternalProject_Add()` and of FetchContent
+  from the locked checkout of the repository and ref.
 - Every other download goes to mitm-cache, as the HTTP and HTTPS proxy,
   which replays the locked files. In the sandbox its setup hook starts it,
   and `cmake-purifier configure` and `build` start it around their CMake
   run.
 
 A second dependency provider checks every `FetchContent_MakeAvailable()`
-call, and the git shim checks every clone and checkout. A dependency the
+call, and the shims check every checkout. A dependency the
 lockfile does not hold stops the build with a hint to run
 `cmake-purifier lock`. After the install, the sandbox build checks that
 every output the lockfile names is in the package.
@@ -172,21 +182,22 @@ Each of these follows from what a build from a lockfile can know.
 - **Two URLs that differ only in their query.** mitm-cache replays a URL
   from the path of its file, which carries no query, so the lock run
   refuses such a pair with an error that names both URLs.
-- **Git repositories reached over SSH.** The sandbox has no credentials,
-  so `fetchgit` cannot fetch from an SSH URL there. Such a dependency can
-  name its repository with an HTTPS URL instead.
+- **Repositories reached over SSH, or a CVS server that needs a login.**
+  The sandbox has no credentials, so the fetchers cannot fetch from them
+  there. Such a dependency can name its repository with an anonymous HTTPS
+  or pserver URL instead.
+- **Version-control commands other than the checkout steps, on a locked
+  checkout.** A locked checkout holds the files of its revision and no
+  history, since the fetchers store only the files, which keeps their
+  hashes reproducible. The shims answer the commands of a checkout and of
+  its update steps, `git rev-parse`, and `git describe` (with the ref the
+  build asked for). Any other command on a locked checkout, such as
+  `git log` in a dependency's CMakeLists.txt, fails with a message that
+  names it.
 - **A dependency pinned to a branch** locks the commit the branch pointed
   at during the lock run, since a branch has no other commit to give.
 - **A `GIT_SUBMODULES` list** locks every submodule of the repository,
   since `fetchgit` fetches all of them or none.
-
-## Not supported yet
-
-FetchContent and `ExternalProject_Add()` can also download from Mercurial,
-Subversion and CVS repositories. cmake-purifier does not lock those yet.
-The lock run stops with an error on such a FetchContent dependency, and an
-`ExternalProject_Add()` that uses one fails in the sandbox, which has no
-network. Support would take a shim like the git one for each of the three.
 
 cmake-purifier follows the design of
 [sbt-purifier](https://github.com/nix-purifiers/sbt-purifier), which was

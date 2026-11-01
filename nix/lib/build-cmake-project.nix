@@ -19,6 +19,8 @@
 #   so that the build fetches nothing the lock run did not.
 # - `fetchurl`: replaces the built-in fetcher of URL downloads, for
 #   credentials or mirrors (see fetch.nix).
+# - `vcsFetchers`: replaces the fetchers of Mercurial, Subversion and CVS
+#   checkouts (see fetchers.nix).
 #
 # Every download goes to the locked copy. FetchContent dependencies come
 # from the initial cache that write-cache.sh writes, git clones from the
@@ -41,6 +43,9 @@
   stdenv,
   cmake,
   git,
+  mercurial,
+  subversion,
+  cvs,
   mitm-cache,
   callPackage,
 }:
@@ -48,6 +53,7 @@
   src,
   lockFile ? src + "/cmake-purifier.lock.json",
   fetchurl ? null,
+  vcsFetchers ? callPackage ./fetchers.nix { },
   cmakeFlags ? [ ],
   nativeBuildInputs ? [ ],
   preConfigure ? "",
@@ -56,8 +62,13 @@
   ...
 }@args:
 let
-  sources = callPackage ./sources.nix { inherit lockFile fetchurl; };
+  sources = callPackage ./sources.nix { inherit lockFile fetchurl vcsFetchers; };
   inherit (sources) lock;
+  # A tool the build checks out with, for the commands its shim passes on;
+  # empty when the lockfile has no checkouts of it.
+  realTool =
+    tool: package: name:
+    if (lock."${tool}Checkouts" or [ ]) != [ ] then "${package}/bin/${name}" else "";
   projectVersion = lock.project.version or "";
   outputs =
     if lock.outputs == null then
@@ -73,6 +84,7 @@ stdenv.mkDerivation (
   removeAttrs args [
     "lockFile"
     "fetchurl"
+    "vcsFetchers"
   ]
   // {
     pname = args.pname or lock.project.name;
@@ -87,7 +99,10 @@ stdenv.mkDerivation (
     cmakeFlags = lock.cmakeFlags ++ cmakeFlags;
     preConfigure = ''
       bash ${./write-cache.sh} ${sources.tree} "$NIX_BUILD_TOP/cmake-purifier/sources" "$NIX_BUILD_TOP/cmake-purifier/cache.cmake" \
-        ${../../cmake/CMakePurifierLocked.cmake} ${./git-shim.sh} ${git}/bin/git
+        ${../../cmake/CMakePurifierLocked.cmake} ${./.} ${git}/bin/git \
+        "${realTool "hg" mercurial "hg"}" "${
+          realTool "svn" subversion "svn"
+        }" "${realTool "cvs" cvs "cvs"}"
       cmakeFlagsArray+=(-C "$NIX_BUILD_TOP/cmake-purifier/cache.cmake")
     ''
     + preConfigure;

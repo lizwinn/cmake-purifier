@@ -37,4 +37,13 @@ run cmake-purifier build -B "$extras" -j4
 [ "$("$extras/extras" --count 7)" = "count 7, zlib 1.3.1" ]
 grep -q 'Victor Zverovich' "$extras/fmt-LICENSE"
 
+# The vcs fixture checks out from repositories in the store. Its fetches
+# name them by plain store path, which gives a fetch no access to them, so
+# the flake check `vcs` must have fetched them before this test runs; a
+# fetch whose output is already in the store does not run again.
+vcs=$scratch/vcs
+run cmake-purifier configure -S "$root/tests/fixtures/vcs" -B "$vcs"
+run cmake-purifier build -B "$vcs" -j4
+[ "$("$vcs/vcs")" = "svn hg cvs" ]
+
 echo "interactive: passed"

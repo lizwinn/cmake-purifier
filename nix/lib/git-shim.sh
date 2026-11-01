@@ -102,11 +102,18 @@ case "$sub" in
     done
     cp -R "$found_path/." "$dir/"
     chmod -R u+w "$dir"
-    printf '%s\n%s\n' "$url" "$rev" > "$dir/$marker"
+    printf '%s\n%s\n%s\n' "$url" "$rev" "$ref" > "$dir/$marker"
     ;;
   rev-parse)
     [ -n "$rev" ] || die "git rev-parse before a checkout of $url"
     printf '%s\n' "$rev"
+    ;;
+  describe)
+    # A dependency that names its version by `git describe` gets the ref
+    # the build checked out, which is a tag when the build asked for one.
+    { IFS= read -r _; IFS= read -r _; IFS= read -r ref || ref=; } < "$dir/$marker"
+    [ -n "$ref" ] || die "git describe before a checkout of $url"
+    printf '%s\n' "$ref"
     ;;
   submodule | fetch | config | status | remote | reset | stash) ;;
   symbolic-ref | show-ref) exit 1 ;;

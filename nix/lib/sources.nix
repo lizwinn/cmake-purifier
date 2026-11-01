@@ -12,6 +12,9 @@
 # - `git-checkouts.tsv`: a line per git checkout the build makes, with the
 #   repository URL, the ref the build asked for, the commit and the store
 #   path of the checkout, for git-shim.sh.
+# - `hg-checkouts.tsv`, `svn-checkouts.tsv` and `cvs-checkouts.tsv`: a line
+#   per Mercurial, Subversion and CVS checkout, with the repository, the
+#   ref and the store path of the checkout, for vcs-shim.sh.
 # - `http/`: every locked file at its artifact path, which is
 #   `<scheme>/<host>/<path>` of its URL, the layout mitm-cache replays.
 {
@@ -19,9 +22,13 @@
   runCommand,
   cmake,
   fetchgit,
+  callPackage,
   lockFile,
   # Replaces the built-in fetcher of file downloads; see fetch.nix.
   fetchurl ? null,
+  # Replaces the fetchers of Mercurial, Subversion and CVS artifacts; see
+  # fetchers.nix.
+  vcsFetchers ? callPackage ./fetchers.nix { },
 }:
 let
   lock = import ./lock.nix { inherit lockFile; };
@@ -30,7 +37,9 @@ let
   # Each artifact fetched once, by its path.
   fetched = builtins.mapAttrs (
     path: artifact:
-    if artifact ? git then
+    if artifact ? hg || artifact ? svn || artifact ? cvs then
+      vcsFetchers.vcs artifact
+    else if artifact ? git then
       fetchgit {
         name = "${lock.storeName (baseNameOf artifact.git.url)}-${
           builtins.substring 0 12 artifact.git.rev
@@ -54,7 +63,7 @@ let
       artifact = artifactOf "dependency ${dep.name}" dep.artifact;
       download = fetched.${dep.artifact};
     in
-    if artifact ? git then
+    if !(artifact ? url) then
       download
     else if dep.extract then
       runCommand "${lock.storeName dep.name}-source"
@@ -80,7 +89,17 @@ let
     }) lock.dependencies
   );
 
-  files = builtins.filter (artifact: !(artifact ? git)) lock.artifacts;
+  files = builtins.filter (artifact: artifact ? url) lock.artifacts;
+
+  checkoutTable =
+    tool:
+    lib.concatMapStrings (
+      c:
+      let
+        artifact = artifactOf "the ${tool} checkout of ${c.repo} at ${c.ref}" c.artifact;
+      in
+      "${c.repo}\t${c.ref}\t${fetched.${artifact.path}}\n"
+    ) (lock."${tool}Checkouts" or [ ]);
 in
 {
   inherit lock byName;
@@ -98,10 +117,16 @@ in
           in
           "${c.url}\t${c.ref}\t${artifact.git.rev}\t${fetched.${c.artifact}}\n"
         ) lock.gitCheckouts;
+        hg = checkoutTable "hg";
+        svn = checkoutTable "svn";
+        cvs = checkoutTable "cvs";
         passAsFile = [
           "deps"
           "http"
           "checkouts"
+          "hg"
+          "svn"
+          "cvs"
         ];
         preferLocalBuild = true;
         allowSubstitutes = false;
@@ -116,5 +141,8 @@ in
           ln -s "$target" "$out/http/$rel"
         done < "$httpPath"
         cp "$checkoutsPath" $out/git-checkouts.tsv
+        cp "$hgPath" $out/hg-checkouts.tsv
+        cp "$svnPath" $out/svn-checkouts.tsv
+        cp "$cvsPath" $out/cvs-checkouts.tsv
       '';
 }

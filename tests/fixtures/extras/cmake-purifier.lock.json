@@ -75,6 +75,9 @@
       "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910"
     }
   ],
+  "hgCheckouts": [],
+  "svnCheckouts": [],
+  "cvsCheckouts": [],
   "outputs": {
     "files": [
       "bin/extras",

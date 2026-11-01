@@ -25,6 +25,14 @@ let
   # URL and with git.
   extras = withOverlay.buildCMakeProject { src = ./fixtures/extras; };
 
+  # Checkouts from Subversion, Mercurial and CVS, of repositories the checks
+  # build themselves.
+  vcsRepos = import ./vcs-repos.nix { inherit pkgs; };
+  vcs = withOverlay.buildCMakeProject {
+    src = ./fixtures/vcs;
+    inherit (vcsRepos) vcsFetchers;
+  };
+
   # The fixture with one more download, built from the fixture's lockfile,
   # which does not hold it.
   unlocked = withOverlay.buildCMakeProject {
@@ -92,6 +100,21 @@ in
     out_text=$(${extras}/bin/extras --count 5)
     [ "$out_text" = "count 5, zlib 1.3.1" ] || { echo "extras printed: $out_text" >&2; exit 1; }
     grep -q 'Copyright (c) 2012 - present, Victor Zverovich' ${extras}/share/purifier-extras/fmt-LICENSE
+    touch $out
+  '';
+
+  # The repositories of the vcs fixture, which tests/relock-fixtures.sh
+  # builds to lock the fixture against.
+  vcs-repos = vcsRepos.repos;
+
+  inherit vcs;
+
+  # The program runs with a header from each repository: the Subversion one
+  # through FetchContent, the Mercurial and CVS ones through
+  # ExternalProject_Add().
+  vcs-runs = pkgs.runCommand "vcs-runs" { } ''
+    out_text=$(${builtins.head vcs.targets.vcs.files})
+    [ "$out_text" = "svn hg cvs" ] || { echo "vcs printed: $out_text" >&2; exit 1; }
     touch $out
   '';
 

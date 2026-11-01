@@ -120,7 +120,7 @@ assert
 pkgs.runCommand "nix-library" { } ''
   tree=${sources.tree}
   bash ${../nix/lib/write-cache.sh} $tree $TMPDIR/copies $TMPDIR/cp/cache.cmake /provider.cmake \
-    ${../nix/lib/git-shim.sh} ${pkgs.git}/bin/git
+    ${../nix/lib} ${pkgs.git}/bin/git "" "" ""
   cat $TMPDIR/cp/cache.cmake
 
   # The archive's single top-level directory became the source tree, and
@@ -151,6 +151,7 @@ pkgs.runCommand "nix-library" { } ''
   (cd $TMPDIR/work/dep-src && $git submodule update --recursive --init)
   [ "$(cd $TMPDIR/work/dep-src && $git --git-dir=.git rev-parse 'v1.0^0')" = ${rev} ]
   ! (cd $TMPDIR/work/dep-src && $git --git-dir=.git show-ref v1.0)
+  [ "$(cd $TMPDIR/work/dep-src && $git describe --tags)" = v1.0 ]
   # A repository or ref the lockfile does not hold stops with the hint.
   ! (cd $TMPDIR/work && $git clone https://example.invalid/other.git other 2> err)
   grep -q 'which the lockfile does not hold' $TMPDIR/work/err
@@ -162,7 +163,7 @@ pkgs.runCommand "nix-library" { } ''
   # A second run with the same sources keeps the copies.
   touch $TMPDIR/copies/archive/marker
   bash ${../nix/lib/write-cache.sh} $tree $TMPDIR/copies $TMPDIR/cp/cache.cmake /provider.cmake \
-    ${../nix/lib/git-shim.sh} ${pkgs.git}/bin/git
+    ${../nix/lib} ${pkgs.git}/bin/git "" "" ""
   [ -e $TMPDIR/copies/archive/marker ]
 
   touch $out

@@ -2,11 +2,12 @@
 #
 # Writes the initial cache of a build from the lockfile.
 #
-#   bash write-cache.sh <sources tree> <copies dir> <cache file> <provider> <git shim> <git>
+#   bash write-cache.sh <sources tree> <copies dir> <cache file> <provider> <nix lib dir>
+#     <git> <hg> <svn> <cvs>
 #
 # <sources tree> is the `tree` of sources.nix: `deps/` with an entry per
-# FetchContent name, `git-checkouts.tsv` with the locked checkouts, and
-# `http/` with the locked file downloads. Some builds write into their
+# FetchContent name, a table of locked checkouts per tool, and `http/`
+# with the locked file downloads. Some builds write into their
 # dependencies' source directories, and the store is read-only, so each
 # entry of `deps/` is copied into <copies dir> first. A copy is made again
 # only when its store path changes.
@@ -21,8 +22,12 @@
 # declares a dependency the lockfile does not hold.
 #
 # Next to the cache file, the script writes `git`, a wrapper that runs
-# <git shim> (git-shim.sh) with the table of locked checkouts and the real
-# <git>, and the cache names it in GIT_EXECUTABLE. Every entry is FORCE, so
+# git-shim.sh of <nix lib dir> with the table of locked checkouts and the
+# real <git>, and the cache names it in GIT_EXECUTABLE. For each of
+# Mercurial, Subversion and CVS that the lockfile has checkouts of, it
+# writes `hg`, `svn` or `cvs`, a wrapper that runs vcs-shim.sh with its
+# table and the real tool, and names it in HG_EXECUTABLE,
+# Subversion_SVN_EXECUTABLE or CVS_EXECUTABLE. Every entry is FORCE, so
 # `cmake -C` with this file also updates an existing build directory.
 set -eu
 
@@ -30,27 +35,54 @@ tree=$1
 copies=$2
 cache=$3
 provider=$4
-shim=$5
+lib=$5
 git=$6
+hg=$7
+svn=$8
+cvs=$9
 
-mkdir -p "$copies" "$(dirname "$cache")"
-wrapper=$(dirname "$cache")/git
-{
-  echo "#!$BASH"
-  printf 'export CMAKE_PURIFIER_GIT_TABLE=%q\n' "$tree/git-checkouts.tsv"
-  printf 'export CMAKE_PURIFIER_REAL_GIT=%q\n' "$git"
-  printf 'exec %q %q "$@"\n' "$BASH" "$shim"
-} > "$wrapper.tmp"
-chmod +x "$wrapper.tmp"
-mv "$wrapper.tmp" "$wrapper"
+dir=$(dirname "$cache")
+mkdir -p "$copies" "$dir"
+
+# Writes the wrapper $1 that exports the variables "$2=$3" ... and runs
+# the shim script $last.
+wrapper() {
+  local file=$1
+  shift
+  {
+    echo "#!$BASH"
+    while [ $# -gt 1 ]; do
+      printf 'export %s=%q\n' "$1" "$2"
+      shift 2
+    done
+    printf 'exec %q %q "$@"\n' "$BASH" "$1"
+  } > "$file.tmp"
+  chmod +x "$file.tmp"
+  mv "$file.tmp" "$file"
+}
+
+wrapper "$dir/git" CMAKE_PURIFIER_GIT_TABLE "$tree/git-checkouts.tsv" CMAKE_PURIFIER_REAL_GIT "$git" \
+  "$lib/git-shim.sh"
 
 {
   echo '# Written by cmake-purifier from the lockfile; do not edit.'
   echo 'set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)'
   echo 'set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE NEVER CACHE STRING "" FORCE)'
   printf 'set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES "%s" CACHE STRING "" FORCE)\n' "$provider"
-  printf 'set(GIT_EXECUTABLE "%s" CACHE FILEPATH "" FORCE)\n' "$wrapper"
+  printf 'set(GIT_EXECUTABLE "%s" CACHE FILEPATH "" FORCE)\n' "$dir/git"
 } > "$cache.tmp"
+
+for entry in hg:HG_EXECUTABLE:"$hg" svn:Subversion_SVN_EXECUTABLE:"$svn" cvs:CVS_EXECUTABLE:"$cvs"; do
+  tool=${entry%%:*}
+  rest=${entry#*:}
+  variable=${rest%%:*}
+  real=${rest#*:}
+  if [ -s "$tree/$tool-checkouts.tsv" ]; then
+    wrapper "$dir/$tool" CMAKE_PURIFIER_VCS "$tool" CMAKE_PURIFIER_VCS_TABLE "$tree/$tool-checkouts.tsv" \
+      CMAKE_PURIFIER_REAL_VCS "$real" "$lib/vcs-shim.sh"
+    printf 'set(%s "%s" CACHE FILEPATH "" FORCE)\n' "$variable" "$dir/$tool" >> "$cache.tmp"
+  fi
+done
 locked=
 
 for entry in "$tree"/deps/*; do

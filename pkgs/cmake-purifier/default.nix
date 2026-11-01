@@ -39,6 +39,9 @@
   runtimeShell,
   cmake,
   git,
+  mercurial,
+  subversion,
+  cvs,
   jq,
   mitmproxy,
   mitm-cache,
@@ -71,6 +74,9 @@ writeShellApplication {
     lockdir=${../../lock}
     nixpkgs=${pkgs.path}
     realGit=${git}/bin/git
+    realHg=${mercurial}/bin/hg
+    realSvn=${subversion}/bin/svn
+    realCvs=${cvs}/bin/cvs
     python=${python3}/bin/python3
     prefetchGit=${nix-prefetch-git}/bin/nix-prefetch-git
 
@@ -137,38 +143,59 @@ writeShellApplication {
       work=$(mktemp -d)
       trap 'kill "''${recorder:-}" 2>/dev/null || true; chmod -R u+w "$work" 2>/dev/null || true; rm -rf "$work"' EXIT
 
-      # git reaches the network the way the user's environment does, and
-      # the wrapper restores that environment for it.
-      {
-        echo "#!${runtimeShell}"
-        for var in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy NO_PROXY no_proxy SSL_CERT_FILE NIX_SSL_CERT_FILE CURL_CA_BUNDLE; do
-          if [ -n "''${!var+set}" ]; then
-            printf 'export %s=%q\n' "$var" "''${!var}"
-          else
-            printf 'unset %s\n' "$var"
-          fi
-        done
-        # The wrapper expands $PWD and $@ itself, and jq the filter.
-        # shellcheck disable=SC2016
-        printf '%q -cn --arg cwd "$PWD" %q --args -- "$@" >> %q\n' \
-          "$(command -v jq)" '{cwd: $cwd, args: $ARGS.positional}' "$work/git.jsonl"
-        printf 'exec %q "$@"\n' "$realGit"
-      } > "$work/git"
-      chmod +x "$work/git"
-
       # mitmproxy forwards to the user's own proxy when one is set.
       mode=regular
       upstreamArgs=()
+      svnArgs=()
       upstream=''${https_proxy:-''${HTTPS_PROXY:-}}
       if [ -n "$upstream" ]; then
         hostport=''${upstream#*://}
         hostport=''${hostport%/}
         if [ "''${hostport#*@}" != "$hostport" ]; then
-          upstreamArgs=(--set "upstream_auth=''${hostport%@*}")
+          creds=''${hostport%@*}
+          upstreamArgs=(--set "upstream_auth=$creds")
           hostport=''${hostport#*@}
+          svnArgs+=(--config-option="servers:global:http-proxy-username=''${creds%%:*}")
+          svnArgs+=(--config-option="servers:global:http-proxy-password=''${creds#*:}")
         fi
         mode="upstream:http://$hostport"
+        # svn reads no proxy variables, only its own configuration.
+        svnArgs+=(--config-option="servers:global:http-proxy-host=''${hostport%:*}")
+        svnArgs+=(--config-option="servers:global:http-proxy-port=''${hostport##*:}")
       fi
+
+      # Writes $work/<tool>, a wrapper that logs each command with its
+      # working directory to $work/<tool>.jsonl and runs <real> with the
+      # user's own network environment and any further arguments given.
+      make_logger() {
+        local tool=$1 real=$2
+        shift 2
+        {
+          echo "#!${runtimeShell}"
+          for var in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy NO_PROXY no_proxy SSL_CERT_FILE NIX_SSL_CERT_FILE CURL_CA_BUNDLE; do
+            if [ -n "''${!var+set}" ]; then
+              printf 'export %s=%q\n' "$var" "''${!var}"
+            else
+              printf 'unset %s\n' "$var"
+            fi
+          done
+          # The wrapper expands $PWD and $@ itself, and jq the filter.
+          # shellcheck disable=SC2016
+          printf '%q -cn --arg cwd "$PWD" %q --args -- "$@" >> %q\n' \
+            "$(command -v jq)" '{cwd: $cwd, args: $ARGS.positional}' "$work/$tool.jsonl"
+          printf 'exec %q' "$real"
+          for extra in "$@"; do
+            printf ' %q' "$extra"
+          done
+          # shellcheck disable=SC2016
+          printf ' "$@"\n'
+        } > "$work/$tool"
+        chmod +x "$work/$tool"
+      }
+      make_logger git "$realGit"
+      make_logger hg "$realHg"
+      make_logger svn "$realSvn" ''${svnArgs[@]+"''${svnArgs[@]}"}
+      make_logger cvs "$realCvs"
       port=$(ephemeral-port-reserve 127.0.0.1)
       PURIFIER_RECORD="$work/http.jsonl" mitmdump -q --listen-host 127.0.0.1 --listen-port "$port" \
         --mode "$mode" ''${upstreamArgs[@]+"''${upstreamArgs[@]}"} --set confdir="$work/mitmproxy" \
@@ -198,6 +225,9 @@ writeShellApplication {
           -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER \
           -DFETCHCONTENT_FULLY_DISCONNECTED=OFF \
           -DGIT_EXECUTABLE="$work/git" \
+          -DHG_EXECUTABLE="$work/hg" \
+          -DSubversion_SVN_EXECUTABLE="$work/svn" \
+          -DCVS_EXECUTABLE="$work/cvs" \
           ''${args[@]+"''${args[@]}"} >&2
         if [ -z "$noBuild" ]; then
           echo "cmake-purifier: building $source to record what the build downloads" >&2
@@ -212,9 +242,8 @@ writeShellApplication {
       [ -f "$work/observed.json" ] || die "the configure run wrote no record of its dependencies"
 
       jq -n '$ARGS.positional' --args -- ''${args[@]+"''${args[@]}"} > "$work/flags.json"
-      "$python" -I "$lockdir/assemble.py" "$work/observed.json" "$work/http.jsonl" "$work/git.jsonl" \
-        "$work/flags.json" "$lockVersion" "$lockfile" "$realGit" "$prefetchGit" \
-        "$work/build" "$work/prefix"
+      "$python" -I "$lockdir/assemble.py" "$work" "$lockVersion" "$lockfile" "$nixpkgs" \
+        "$nixlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit"
     }
 
     # Builds the locked downloads and writes the initial cache of <build dir>.
@@ -228,7 +257,7 @@ writeShellApplication {
         "{ lockFile }: ((import $nixpkgs { }).callPackage $nixlib/sources.nix { inherit lockFile; }).tree" \
         --arg lockFile "$lockfile" --out-link "$build/cmake-purifier/sources-root")
       bash "$nixlib/write-cache.sh" "$tree" "$build/cmake-purifier/sources" "$build/cmake-purifier/cache.cmake" \
-        "$lockedProvider" "$nixlib/git-shim.sh" "$realGit"
+        "$lockedProvider" "$nixlib" "$realGit" "$realHg" "$realSvn" "$realCvs"
     }
 
     # Runs a command with mitm-cache replaying the locked files of

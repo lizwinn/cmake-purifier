@@ -16,7 +16,13 @@ The tests come in three layers.
      (argparse) and `FetchContent_Populate()` (cxxopts, `DOWNLOAD_ONLY`),
      and `ExternalProject_Add()` with an archive that it builds (zlib) and
      with a git checkout (expected-lite).
-   - `basic-runs` and `extras-runs` run the installed programs, and
+   - `vcs` builds `tests/fixtures/vcs`, with a FetchContent dependency
+     from Subversion and `ExternalProject_Add()` checkouts from Mercurial
+     and CVS. `vcs-repos` builds its three repositories
+     (`tests/vcs-repos.nix`), so no check needs a server; the fixture's
+     fetchers get the repositories as inputs through `vcsFetchers`.
+   - `basic-runs`, `extras-runs` and `vcs-runs` run the installed
+     programs, and
      `basic-name` checks that the package name and version come from the
      fixture's `project()`.
    - `basic-outputs` and `extras-outputs` check, at evaluation time, the
@@ -32,14 +38,16 @@ The tests come in three layers.
    - `cmake-purifier` builds the command, which runs shellcheck on it.
    - `treefmt` checks the formatting of the Nix files.
 2. **The interactive test** (`tests/interactive.sh`) runs outside the
-   sandbox. It configures and builds both fixtures with
+   sandbox. It configures and builds the fixtures with
    `cmake-purifier configure` and `cmake-purifier build`, runs their
    programs and the basic tests, and checks that FetchContent populated
    none of the basic dependencies itself. Run it with the hosts of the
    fixtures' downloads unreachable, to show that the builds download
-   nothing.
-3. **The relock** (`tests/relock-fixtures.sh`) runs the lock run on both
-   fixtures, with the network. CI runs it and fails when a lockfile
+   nothing, and after the flake checks, which fetch the vcs fixture's
+   checkouts.
+3. **The relock** (`tests/relock-fixtures.sh`) runs the lock run on the
+   fixtures, with the network, and on the vcs fixture against the
+   repositories of `vcs-repos`. CI runs it and fails when a lockfile
    changes, so the lock run must reproduce the committed lockfiles.
 
 CI (`.github/workflows/check.yml`) runs all three layers on x86_64-linux,

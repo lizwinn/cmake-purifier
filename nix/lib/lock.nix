@@ -8,10 +8,14 @@
 # file, `{ path, url, mirrors, hash }` with the SRI hash of the file and a
 # list of further URLs that serve the same bytes, or a git
 # checkout, `{ path, git = { url, rev, submodules }, hash }` with the SRI
-# NAR hash of the checkout as fetchgit makes it. These are the download
-# entries of the shared nix-purifiers library. A file's `path` is
+# NAR hash of the checkout as fetchgit makes it, or a checkout from another
+# version-control system: `hg = { url, rev, subrepos }`,
+# `svn = { url, rev, ignoreExternals, ignoreKeywords }`, or
+# `cvs = { cvsRoot, module, tag, date }` with one of `tag` and `date` null,
+# each with the hash of the nixpkgs fetcher's output. These are the
+# download entries of the shared nix-purifiers library. A file's `path` is
 # `<scheme>/<host>/<path>` of its URL, where mitm-cache replays it; a
-# checkout's `path` is `git/<scheme>/<host>/<path>/<commit>`.
+# checkout's `path` starts with its tool and ends with its revision.
 #
 # `dependencies` is every FetchContent_MakeAvailable() dependency, by its
 # FetchContent `name`. Its `artifact` is the path of its download. A
@@ -19,7 +23,9 @@
 #
 # `gitCheckouts` is every git checkout the build makes, by repository
 # `url` and the `ref` the build checks out, with the path of its
-# `artifact`.
+# `artifact`. `hgCheckouts`, `svnCheckouts` and `cvsCheckouts` are the
+# checkouts of the other tools, by `repo` and `ref` as vcs-shim.sh reads
+# them, with the path of their `artifact`.
 #
 # `outputs` is what the install writes: `files`, every installed file by
 # its path relative to the install prefix, and `targets`, each installed
