@@ -3,9 +3,10 @@
 # Writes the lockfile from what the lock run recorded.
 #
 #   python3 -I assemble.py <work dir> <lock version> <lockfile> <nixpkgs>
-#     <nix lib dir> <git> <hg> <svn> <nix-prefetch-git> <definition hash>
+#     <nix lib dir> <purifier> <git> <hg> <svn> <nix-prefetch-git> <definition hash>
 #
-# <nix lib dir> is this project's nix/lib, which holds prefetch-vcs.nix.
+# <nix lib dir> is this project's nix/lib, which holds prefetch-vcs.nix,
+# and <purifier> the source of the shared library it fetches with.
 # <definition hash> is the hash of the build definition, which
 # nix/lib/definition-hash.sh computes.
 #
@@ -50,6 +51,7 @@ from urls import https_of, url_path
     lockfile,
     nixpkgs,
     nixlib,
+    purifier,
     git,
     hg,
     svn,
@@ -111,6 +113,7 @@ def vcs_artifact(artifact):
         [
             "nix-build", "--no-out-link", prefetch_vcs,
             "--arg", "nixpkgs", nixpkgs,
+            "--arg", "purifier", purifier,
             "--argstr", "artifact", json.dumps(artifact),
         ],
         capture_output=True,

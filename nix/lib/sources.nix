@@ -5,7 +5,9 @@
 # buildCMakeProject's `sources` is this, and `cmake-purifier configure`
 # builds it on its own for an interactive build.
 #
-# `tree` is one directory with three parts:
+# Every artifact is a download entry of the shared library `purifier`,
+# which fetches it (fetchEntry) and lays the file downloads out
+# (tree). `tree` is one directory with these parts:
 #
 # - `deps/<name>`: the source tree of each FetchContent dependency, as
 #   FetchContent would have populated it. `byName` maps each name to it.
@@ -21,38 +23,28 @@
 #   `<scheme>/<host>/<path>` of its URL, the layout mitm-cache replays.
 {
   lib,
+  pkgs,
   runCommand,
   cmake,
-  fetchgit,
-  callPackage,
+  fetchcvs,
+  purifier,
   lockFile,
-  # Replaces the built-in fetcher of file downloads; see fetch.nix.
-  fetchurl ? null,
-  # Replaces the fetchers of Mercurial, Subversion and CVS artifacts; see
-  # fetchers.nix.
-  vcsFetchers ? callPackage ./fetchers.nix { },
+  # Fetchers that replace the ones fetchEntry uses, by their names
+  # (fetchurl, fetchgit, fetchhg, fetchsvn, fetchcvs), for credentials or
+  # mirrors. Each takes the arguments of the nixpkgs fetcher of its name.
+  fetchers ? { },
 }:
 let
   lock = import ./lock.nix { inherit lockFile; };
-  fetch = import ./fetch.nix { inherit lock fetchurl; };
+
+  fetcherArgs = {
+    inherit pkgs;
+    fetchcvs = import ./fetch-cvs.nix { inherit fetchcvs; };
+  }
+  // fetchers;
 
   # Each artifact fetched once, by its path.
-  fetched = builtins.mapAttrs (
-    path: artifact:
-    if artifact ? hg || artifact ? svn || artifact ? cvs then
-      vcsFetchers.vcs artifact
-    else if artifact ? git then
-      fetchgit {
-        name = "${lock.storeName (baseNameOf artifact.git.url)}-${
-          builtins.substring 0 12 artifact.git.rev
-        }";
-        inherit (artifact.git) url rev leaveDotGit;
-        inherit (artifact) hash;
-        fetchSubmodules = artifact.git.submodules;
-      }
-    else
-      fetch artifact
-  ) lock.artifactsByPath;
+  fetched = builtins.mapAttrs (_: purifier.fetchEntry fetcherArgs) lock.artifactsByPath;
 
   artifactOf =
     what: path:
@@ -76,6 +68,8 @@ let
     else if !(artifact ? url) then
       download
     else if dep.extract then
+      # FetchContent unpacks an archive with CMake's own rule, which strips
+      # a single top-level directory only when there is exactly one.
       runCommand "${lock.storeName dep.name}-source"
         {
           nativeBuildInputs = [ cmake ];
@@ -99,7 +93,13 @@ let
     }) lock.dependencies
   );
 
-  files = builtins.filter (artifact: artifact ? url) lock.artifacts;
+  http = purifier.tree (
+    fetcherArgs
+    // {
+      name = "cmake-purifier-http";
+      entries = builtins.filter (artifact: artifact ? url) lock.artifacts;
+    }
+  );
 
   checkoutTable =
     tool:
@@ -120,7 +120,6 @@ in
       {
         deps = lib.concatStrings (lib.mapAttrsToList (name: path: "${name}\t${path}\n") byName);
         declared = lib.concatMapStrings (dep: "${dep.name}\t${dep.declared or ""}\n") lock.dependencies;
-        http = lib.concatMapStrings (a: "${a.path}\t${fetched.${a.path}}\n") files;
         checkouts = lib.concatMapStrings (
           c:
           let
@@ -134,7 +133,6 @@ in
         passAsFile = [
           "deps"
           "declared"
-          "http"
           "checkouts"
           "hg"
           "svn"
@@ -144,14 +142,11 @@ in
         allowSubstitutes = false;
       }
       ''
-        mkdir -p $out/deps $out/http
+        mkdir -p $out/deps
         while IFS=$'\t' read -r name target; do
           ln -s "$target" "$out/deps/$name"
         done < "$depsPath"
-        while IFS=$'\t' read -r rel target; do
-          mkdir -p "$out/http/$(dirname "$rel")"
-          ln -s "$target" "$out/http/$rel"
-        done < "$httpPath"
+        ln -s ${http} $out/http
         cp "$declaredPath" $out/declared.tsv
         cp "$checkoutsPath" $out/git-checkouts.tsv
         cp "$hgPath" $out/hg-checkouts.tsv

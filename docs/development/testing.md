@@ -23,8 +23,11 @@ The tests come in four layers.
      list each; the fixture fails when a checkout holds a submodule its
      list leaves out. `vcs-repos` builds its repositories
      (`tests/vcs-repos.nix`), so no check needs a server; the fixture's
-     fetchers get the repositories as inputs through `vcsFetchers` and
-     `fetchgit`.
+     fetchers get the repositories as inputs through `fetchers`.
+   - `cvs` builds `tests/fixtures/cvs`, an `ExternalProject_Add()`
+     checkout of a CVS tag, and `cvs-runs` runs it. nixpkgs' cvs aborts on
+     aarch64-linux, so there `cvs` is a check that prints that it skips the
+     fixture.
    - `lock-urls` checks the URL rules of the lock run (`lock/urls.py`),
      the mapping of SSH URLs to HTTPS ones included, and `lock-records`
      the reading of its records (`lock/records.py`) on sample records of

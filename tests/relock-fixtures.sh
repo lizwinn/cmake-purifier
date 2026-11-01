@@ -23,9 +23,14 @@ lock -S "$root/tests/fixtures/basic"
 lock -S "$root/tests/fixtures/extras"
 
 repos=$(nix build --no-link --print-out-paths "$root#checks.$system.vcs-repos")
-CVSREADONLYFS=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always \
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always \
   lock -S "$root/tests/fixtures/vcs" \
   -DPURIFIER_SVN_URL="file://$repos/svn" \
   -DPURIFIER_HG_URL="file://$repos/hg" \
-  -DPURIFIER_CVS_ROOT="$repos/cvs" \
   -DPURIFIER_GIT_URL="file://$repos/git/super.git"
+
+# nixpkgs' cvs aborts on aarch64-linux, so the CVS fixture locks on
+# x86_64-linux only.
+if [ "$system" = x86_64-linux ]; then
+  CVSREADONLYFS=1 lock -S "$root/tests/fixtures/cvs" -DPURIFIER_CVS_ROOT="$repos/cvs"
+fi

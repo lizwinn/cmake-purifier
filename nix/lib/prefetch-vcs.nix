@@ -1,23 +1,26 @@
 # SPDX-License-Identifier: MIT
 #
-# The fetcher of a Mercurial, Subversion or CVS artifact, for the lock run
+# The fetch of a Mercurial, Subversion or CVS artifact, for the lock run
 # to learn its hash: `cmake-purifier lock` builds it with a hash that is
 # wrong on purpose and reads the right one from the error. The artifact is
-# the JSON of a lockfile entry without its `hash`, and the fetcher is the
-# one fetchers.nix makes for the sandbox build, so the hash is exactly the
-# one that build checks.
+# the JSON of a lockfile entry without its `hash`, and the fetch is the
+# shared library's fetchEntry with the fetchers of the sandbox build
+# (sources.nix), so the hash is exactly the one that build checks.
 #
 # A repository in the store, which only tests have, is no input of the
-# fetcher by the URL alone, so the URL gets the store path's context here.
+# fetch by the URL alone, so the URL gets the store path's context here.
 # builtins.storePath needs an impure evaluation, which the lock run's
 # nix-build is.
 {
   nixpkgs,
+  # The source of the shared library.
+  purifier,
   artifact,
 }:
 let
   pkgs = import nixpkgs { };
   inherit (pkgs) lib;
+  purifierLib = import "${purifier}/nix/lib" { inherit lib; };
   withStore =
     text:
     let
@@ -45,6 +48,8 @@ let
         cvsRoot = withStore entry.cvs.cvsRoot;
       };
     };
-  fetchers = pkgs.callPackage ./fetchers.nix { };
 in
-fetchers.vcs (contextual // { hash = lib.fakeHash; })
+purifierLib.fetchEntry {
+  inherit pkgs;
+  fetchcvs = import ./fetch-cvs.nix { inherit (pkgs) fetchcvs; };
+} (contextual // { hash = lib.fakeHash; })

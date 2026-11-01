@@ -83,7 +83,10 @@ buildCMakeProject {
 `buildCMakeProject` takes every argument of `stdenv.mkDerivation`, and
 nixpkgs' CMake setup hook runs the build. `nix/lib/build-cmake-project.nix`
 documents the arguments of its own: `lockFile`, `cmakeFlags` (after the
-locked ones), and `fetchurl` (for credentials or mirrors).
+locked ones), and `fetchers`, which replaces `fetchurl`, `fetchgit`,
+`fetchhg`, `fetchsvn` or `fetchcvs` for credentials or mirrors. The
+downloads are entries of the shared library of the nix-purifiers,
+[purifier](https://github.com/nix-purifiers/purifier), which fetches them.
 
 To work on the project offline, configure and build a build directory
 from the lockfile:
@@ -234,10 +237,14 @@ Each of these follows from what a build from a lockfile can know.
   refuses such a pair with an error that names both URLs.
 - **A repository that needs a login.** The sandbox has no credentials, so
   the default fetchers cannot fetch from a repository that serves no
-  anonymous HTTPS, or from a CVS server that needs a login. For git,
-  `buildCMakeProject` takes a `fetchgit` that has the credentials, such as
-  nixpkgs' fetchgit with a `netrcPhase`; for the other tools,
-  `vcsFetchers` replaces the fetchers the same way.
+  anonymous HTTPS, or from a CVS server that needs a login.
+  `buildCMakeProject` takes fetchers that have the credentials in
+  `fetchers`, such as nixpkgs' fetchgit with a `netrcPhase` as
+  `fetchers.fetchgit`.
+- **CVS on aarch64-linux.** nixpkgs' cvs aborts on aarch64-linux, in the
+  2006 copy of gnulib's vasnprintf that it bundles, on every export and
+  checkout. A CVS checkout locks and builds on x86_64-linux only, and the
+  checks skip the CVS fixture on aarch64-linux with a message.
 - **Version-control commands other than the checkout steps, on a locked
   checkout.** A locked checkout holds the files of its revision and no
   history, since the fetchers store only the files, which keeps their

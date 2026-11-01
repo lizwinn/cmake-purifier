@@ -53,6 +53,15 @@ grep -q 'Victor Zverovich' "$extras/fmt-LICENSE"
 vcs=$scratch/vcs
 run cmake-purifier configure -S "$root/tests/fixtures/vcs" -B "$vcs"
 run cmake-purifier build -B "$vcs" -j4
-[ "$("$vcs/vcs")" = "svn hg cvs sub_a sub_b" ]
+[ "$("$vcs/vcs")" = "svn hg sub_a sub_b" ]
+
+# nixpkgs' cvs aborts on aarch64-linux, so the CVS fixture runs on
+# x86_64-linux only.
+if [ "$(uname -m)" = x86_64 ]; then
+  cvs=$scratch/cvs
+  run cmake-purifier configure -S "$root/tests/fixtures/cvs" -B "$cvs"
+  run cmake-purifier build -B "$cvs" -j4
+  [ "$("$cvs/cvs")" = cvs ]
+fi
 
 echo "interactive: passed"

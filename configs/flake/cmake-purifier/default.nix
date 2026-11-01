@@ -69,6 +69,7 @@
           {
             checks = import ../../../tests {
               inherit pkgs;
+              inherit (self.lib) purifier;
               overlay = self.overlays.default;
               inherit (self.packages.${system}) cmake-purifier;
             };

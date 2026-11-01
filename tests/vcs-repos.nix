@@ -16,15 +16,20 @@
 #   `git/sub-b.git` by relative URL. Its commits have a fixed author and
 #   date too.
 #
-# `vcsFetchers` is fetchers.nix, and `fetchgit` nixpkgs' fetchgit, with
-# these repositories as inputs of each fetch. The lockfile names them by
-# store path only, which gives a fetch no access to them in the sandbox.
+# `fetchers` replaces the git, Mercurial, Subversion and CVS fetchers of
+# the shared library's fetchEntry with ones that have these repositories
+# as an input of each fetch. The lockfile names them by store path only,
+# which gives a fetch no access to them in the sandbox.
 # git clones submodules over the file transport only when
 # `protocol.file.allow` permits it, which `gitConfig` sets, for fetchgit
 # here and for the lock run in tests/relock-fixtures.sh.
 { pkgs }:
 let
   inherit (pkgs) lib;
+
+  # nixpkgs' cvs aborts on aarch64-linux, in the 2006 gnulib vasnprintf it
+  # bundles, so only x86_64-linux has the CVS repository.
+  cvsWorks = pkgs.stdenv.hostPlatform.isx86_64;
 
   header = name: ''
     #pragma once
@@ -76,14 +81,16 @@ let
         hg -R $out/hg tag -u test -d '0 0' v1
         rm -f $out/hg/hg.h $out/hg/.hgtags
 
-        export CVSROOT=$out/cvs
-        cvs -Q init
-        mkdir -p work/cvslib
-        cat > work/cvslib/cvs.h <<'EOF'
-        ${header "cvs"}
-        EOF
-        (cd work/cvslib && cvs -Q import -m init cvslib vendor start)
-        cvs -Q rtag v1 cvslib
+        ${lib.optionalString cvsWorks ''
+          export CVSROOT=$out/cvs
+          cvs -Q init
+          mkdir -p work/cvslib
+          cat > work/cvslib/cvs.h <<'EOF'
+          ${header "cvs"}
+          EOF
+          (cd work/cvslib && cvs -Q import -m init cvslib vendor start)
+          cvs -Q rtag v1 cvslib
+        ''}
 
         mkdir $out/git
         for sub in a b; do
@@ -119,33 +126,18 @@ let
     in
     if found == null then text else "${builtins.elemAt found 0}${repos}${builtins.elemAt found 1}";
 
-  base = pkgs.callPackage ../nix/lib/fetchers.nix { };
+  fetchCvs = import ../nix/lib/fetch-cvs.nix { inherit (pkgs) fetchcvs; };
 in
 {
-  inherit repos gitConfig;
-  fetchgit =
-    args:
-    (pkgs.fetchgit (args // { url = withRepos args.url; })).overrideAttrs (old: {
-      env = (old.env or { }) // gitConfig;
-    });
-  vcsFetchers.vcs =
-    artifact:
-    base.vcs (
-      artifact
-      // lib.optionalAttrs (artifact ? hg) {
-        hg = artifact.hg // {
-          url = withRepos artifact.hg.url;
-        };
-      }
-      // lib.optionalAttrs (artifact ? svn) {
-        svn = artifact.svn // {
-          url = withRepos artifact.svn.url;
-        };
-      }
-      // lib.optionalAttrs (artifact ? cvs) {
-        cvs = artifact.cvs // {
-          cvsRoot = withRepos artifact.cvs.cvsRoot;
-        };
-      }
-    );
+  inherit repos gitConfig cvsWorks;
+  fetchers = {
+    fetchgit =
+      args:
+      (pkgs.fetchgit (args // { url = withRepos args.url; })).overrideAttrs (old: {
+        env = (old.env or { }) // gitConfig;
+      });
+    fetchhg = args: pkgs.fetchhg (args // { url = withRepos args.url; });
+    fetchsvn = args: pkgs.fetchsvn (args // { url = withRepos args.url; });
+    fetchcvs = args: fetchCvs (args // { cvsRoot = withRepos args.cvsRoot; });
+  };
 }

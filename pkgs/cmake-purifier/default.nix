@@ -50,6 +50,9 @@
   python3,
   python3Packages,
   coreutils,
+  # The source of the shared library of the nix-purifiers, which the
+  # package overlay passes.
+  purifier ? throw "cmake-purifier: the command needs the source of the shared purifier library; take it from this flake's overlay",
 }:
 writeShellApplication {
   name = "cmake-purifier";
@@ -71,6 +74,7 @@ writeShellApplication {
     provider=${../../cmake}/CMakePurifierLock.cmake
     lockedProvider=${../../cmake}/CMakePurifierLocked.cmake
     nixlib=${../../nix/lib}
+    purifierlib=${purifier}
     lockdir=${../../lock}
     nixpkgs=${pkgs.path}
     realGit=${git}/bin/git
@@ -245,7 +249,7 @@ writeShellApplication {
 
       jq -n '$ARGS.positional' --args -- ''${args[@]+"''${args[@]}"} > "$work/flags.json"
       "$python" -I "$lockdir/assemble.py" "$work" "$lockVersion" "$lockfile" "$nixpkgs" \
-        "$nixlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit" \
+        "$nixlib" "$purifierlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit" \
         "$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")"
       echo "cmake-purifier: locked in $((SECONDS - started)) seconds" >&2
     }
@@ -265,7 +269,7 @@ writeShellApplication {
       mkdir -p "$build/cmake-purifier"
       build=$(realpath "$build")
       tree=$(nix-build --expr \
-        "{ lockFile }: ((import $nixpkgs { }).callPackage $nixlib/sources.nix { inherit lockFile; }).tree" \
+        "{ lockFile }: let pkgs = import $nixpkgs { }; in (pkgs.callPackage $nixlib/sources.nix { inherit lockFile; purifier = import $purifierlib/nix/lib { inherit (pkgs) lib; }; }).tree" \
         --arg lockFile "$lockfile" --out-link "$build/cmake-purifier/sources-root")
       bash "$nixlib/write-cache.sh" "$tree" "$build/cmake-purifier/sources" "$build/cmake-purifier/cache.cmake" \
         "$lockedProvider" "$nixlib" "$realGit" "$realHg" "$realSvn" "$realCvs"

@@ -17,13 +17,12 @@
 #   top-level project(), which the lockfile records.
 # - `cmakeFlags`: flags after the ones the lock run used, which come first
 #   so that the build fetches nothing the lock run did not.
-# - `fetchurl`: replaces the built-in fetcher of URL downloads, for
-#   credentials or mirrors (see fetch.nix).
-# - `fetchgit`: replaces nixpkgs' fetchgit for git checkouts, for a
-#   repository that needs a login, such as fetchgit with its
-#   `netrcPhase`, or with an SSH key the build may use.
-# - `vcsFetchers`: replaces the fetchers of Mercurial, Subversion and CVS
-#   checkouts (see fetchers.nix).
+# - `fetchers`: fetchers that replace the ones the shared library's
+#   fetchEntry uses, by name: `fetchurl`, `fetchgit`, `fetchhg`,
+#   `fetchsvn` and `fetchcvs`. Each takes the arguments of the nixpkgs
+#   fetcher of its name. They are the place for credentials and mirrors,
+#   such as a fetchgit with a `netrcPhase` for a repository that needs a
+#   login.
 #
 # Every download goes to the locked copy. FetchContent dependencies come
 # from the initial cache that write-cache.sh writes, checkouts from the
@@ -51,13 +50,14 @@
   cvs,
   mitm-cache,
   callPackage,
+  # The shared library's functions (lib.purifier of the purifier flake),
+  # which the package overlay passes.
+  purifier,
 }:
 {
   src,
   lockFile ? src + "/cmake-purifier.lock.json",
-  fetchurl ? null,
-  fetchgit ? null,
-  vcsFetchers ? callPackage ./fetchers.nix { },
+  fetchers ? { },
   cmakeFlags ? [ ],
   nativeBuildInputs ? [ ],
   preConfigure ? "",
@@ -66,12 +66,7 @@
   ...
 }@args:
 let
-  sources = callPackage ./sources.nix (
-    {
-      inherit lockFile fetchurl vcsFetchers;
-    }
-    // lib.optionalAttrs (fetchgit != null) { inherit fetchgit; }
-  );
+  sources = callPackage ./sources.nix { inherit lockFile fetchers purifier; };
   inherit (sources) lock;
   # A tool the build checks out with, for the commands its shim passes on;
   # empty when the lockfile has no checkouts of it.
@@ -92,9 +87,7 @@ stdenv.mkDerivation (
   finalAttrs:
   removeAttrs args [
     "lockFile"
-    "fetchurl"
-    "fetchgit"
-    "vcsFetchers"
+    "fetchers"
   ]
   // {
     pname = args.pname or lock.project.name;

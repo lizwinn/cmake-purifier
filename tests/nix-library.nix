@@ -5,7 +5,7 @@
 # not extracted, both FetchContent dependencies; a file only the proxy
 # serves; and a git checkout, which a FetchContent dependency whose name
 # has upper and lower case letters uses, and which the git shim serves.
-{ pkgs }:
+{ pkgs, purifier }:
 let
   inherit (pkgs) lib;
 
@@ -110,7 +110,10 @@ let
       echo ${rev} > $out/REV
     '';
 
-  sources = pkgs.callPackage ../nix/lib/sources.nix { inherit lockFile fetchurl fetchgit; };
+  sources = pkgs.callPackage ../nix/lib/sources.nix {
+    inherit lockFile purifier;
+    fetchers = { inherit fetchurl fetchgit; };
+  };
 in
 assert
   !(builtins.tryEval (import ../nix/lib/lock.nix { lockFile = otherVersion; })).success

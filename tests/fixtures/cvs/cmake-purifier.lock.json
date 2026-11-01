@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "project": {
+    "name": "purifier-cvs",
+    "version": "0.1.0"
+  },
+  "definitionHash": "88ed3c97fe30d7534019c8a2a2003aba9e48c310fd05024651efaecf380102fe",
+  "cmakeFlags": [
+    "-DPURIFIER_CVS_ROOT=/nix/store/x6bp2062jnrdd5ph4rcyvpdw6pk2ayk1-cmake-purifier-vcs-repos/cvs"
+  ],
+  "artifacts": [
+    {
+      "path": "cvs/nix_store_x6bp2062jnrdd5ph4rcyvpdw6pk2ayk1-cmake-purifier-vcs-repos_cvs/cvslib/v1",
+      "cvs": {
+        "cvsRoot": "/nix/store/x6bp2062jnrdd5ph4rcyvpdw6pk2ayk1-cmake-purifier-vcs-repos/cvs",
+        "module": "cvslib",
+        "tag": "v1",
+        "date": null
+      },
+      "hash": "sha256-upUwyTAW3R5EmG4WXb5vSejGj3MhDwQ1HQc96KLf1CA="
+    }
+  ],
+  "dependencies": [],
+  "gitCheckouts": [],
+  "hgCheckouts": [],
+  "svnCheckouts": [],
+  "cvsCheckouts": [
+    {
+      "repo": "/nix/store/x6bp2062jnrdd5ph4rcyvpdw6pk2ayk1-cmake-purifier-vcs-repos/cvs cvslib",
+      "ref": "r:v1",
+      "artifact": "cvs/nix_store_x6bp2062jnrdd5ph4rcyvpdw6pk2ayk1-cmake-purifier-vcs-repos_cvs/cvslib/v1"
+    }
+  ],
+  "outputs": {
+    "files": [
+      "bin/cvs"
+    ],
+    "targets": {
+      "cvs": {
+        "type": "EXECUTABLE",
+        "files": [
+          "bin/cvs"
+        ]
+      }
+    }
+  }
+}

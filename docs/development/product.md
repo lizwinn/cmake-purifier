@@ -24,13 +24,15 @@ the lock run, the builds from the lockfile, and the limits.
 - `lock/`: the lock run's recorder addon for mitmproxy (`record.py`) and
   the script that writes the lockfile from the records (`assemble.py`).
 - `nix/lib/`: the Nix library. `lock.nix` reads the lockfile and
-  documents its format, `fetch.nix` fetches file downloads, `sources.nix`
+  documents its format, `sources.nix`
   makes the tree a build from the lockfile reads, `write-cache.sh` writes
   its initial cache, `git-shim.sh` and `vcs-shim.sh` serve its
-  checkouts, `fetchers.nix` holds the Mercurial, Subversion and CVS
-  fetchers of the sandbox build, `prefetch-vcs.nix` runs them for the
-  lock run's hashes, and `build-cmake-project.nix` is
-  `buildCMakeProject`.
+  checkouts, `fetch-cvs.nix` is the CVS fetcher of the sandbox build,
+  `prefetch-vcs.nix` fetches a Mercurial, Subversion or CVS checkout for
+  the hash the lock run records, and `build-cmake-project.nix` is
+  `buildCMakeProject`. Every fetch goes through the shared library
+  `purifier`, a flake input, whose `fetchEntry` and `tree` take the
+  download entries of the lockfile.
 - `pkgs/cmake-purifier/`: the command.
 - `configs/`, `lib-overlays/`, `pkg-overlays/`: the caisson flake layout.
 - `tests/`: the checks, the fixtures and the scripts around them.

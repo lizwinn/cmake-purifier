@@ -4,6 +4,8 @@
 # access is the fixed-output fetches of locked downloads.
 {
   pkgs,
+  # The shared library's functions.
+  purifier,
   # The flake's default package overlay, which adds buildCMakeProject.
   overlay,
   cmake-purifier,
@@ -25,12 +27,17 @@ let
   # URL and with git.
   extras = withOverlay.buildCMakeProject { src = ./fixtures/extras; };
 
-  # Checkouts from Subversion, Mercurial and CVS, of repositories the checks
-  # build themselves.
+  # Checkouts from Subversion, Mercurial, git with submodules and CVS, of
+  # repositories the checks build themselves. CVS has a fixture of its
+  # own, which only x86_64-linux builds.
   vcsRepos = import ./vcs-repos.nix { inherit pkgs; };
   vcs = withOverlay.buildCMakeProject {
     src = ./fixtures/vcs;
-    inherit (vcsRepos) vcsFetchers fetchgit;
+    inherit (vcsRepos) fetchers;
+  };
+  cvs = withOverlay.buildCMakeProject {
+    src = ./fixtures/cvs;
+    inherit (vcsRepos) fetchers;
   };
 
   # The fixture with fmt at another version, built from the lockfile of
@@ -127,7 +134,7 @@ in
   # build when a checkout holds a submodule its list leaves out.
   vcs-runs = pkgs.runCommand "vcs-runs" { } ''
     out_text=$(${builtins.head vcs.targets.vcs.files})
-    [ "$out_text" = "svn hg cvs sub_a sub_b" ] || { echo "vcs printed: $out_text" >&2; exit 1; }
+    [ "$out_text" = "svn hg sub_a sub_b" ] || { echo "vcs printed: $out_text" >&2; exit 1; }
     touch $out
   '';
 
@@ -149,8 +156,9 @@ in
   # hash its lockfile recorded, so a build warns only when the definition
   # changed; after an edit to a CMakeLists.txt, it hashes differently.
   definition-hash = pkgs.runCommand "definition-hash" { } ''
-    for fixture in basic extras vcs; do
+    for fixture in basic extras vcs cvs; do
       case $fixture in
+        cvs) src=${./fixtures/cvs} ;;
         basic) src=${./fixtures/basic} ;;
         extras) src=${./fixtures/extras} ;;
         vcs) src=${./fixtures/vcs} ;;
@@ -186,8 +194,28 @@ in
         touch $out
       '';
 
-  nix-library = import ./nix-library.nix { inherit pkgs; };
+  nix-library = import ./nix-library.nix { inherit pkgs purifier; };
 
   # The command builds, which runs shellcheck on it.
   inherit cmake-purifier;
 }
+// (
+  if vcsRepos.cvsWorks then
+    {
+      inherit cvs;
+      # The program runs with the header of the CVS checkout.
+      cvs-runs = pkgs.runCommand "cvs-runs" { } ''
+        [ "$(${builtins.head cvs.targets.cvs.files})" = cvs ]
+        touch $out
+      '';
+    }
+  else
+    {
+      # nixpkgs' cvs aborts on this system, in the 2006 gnulib vasnprintf
+      # it bundles, so the CVS fixture builds on x86_64-linux only.
+      cvs = pkgs.runCommand "cvs-skipped" { } ''
+        echo "cmake-purifier: the CVS fixture is skipped on ${pkgs.stdenv.hostPlatform.system}, where nixpkgs' cvs aborts" >&2
+        touch $out
+      '';
+    }
+)
