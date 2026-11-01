@@ -11,7 +11,8 @@
   pkgs,
   # The shared library's functions.
   purifier,
-  # lib.cmake-purifier.buildCMakeProject and readLock of the flake.
+  # buildCMakeProject of the flake's package overlay, and
+  # lib.cmake-purifier.readLock.
   buildCMakeProject,
   readLock,
   cmake-purifier,
@@ -20,9 +21,8 @@ let
   inherit (pkgs) lib;
 
   # The fixture builds the way a consumer's package does: through the
-  # library's buildCMakeProject.
+  # buildCMakeProject of the package overlay.
   basic = buildCMakeProject {
-    inherit pkgs;
     src = ./fixtures/basic;
   };
   basicPackage = basic.packages.purifier-basic;
@@ -32,7 +32,6 @@ let
   # URL and with git.
   extras =
     (buildCMakeProject {
-      inherit pkgs;
       src = ./fixtures/extras;
     }).packages.purifier-extras;
 
@@ -42,13 +41,11 @@ let
   vcsRepos = import ./vcs-repos.nix { inherit pkgs; };
   vcs =
     (buildCMakeProject {
-      inherit pkgs;
       src = ./fixtures/vcs;
       inherit (vcsRepos) fetchers;
     }).packages.purifier-vcs;
   cvs =
     (buildCMakeProject {
-      inherit pkgs;
       src = ./fixtures/cvs;
       inherit (vcsRepos) fetchers;
     }).packages.purifier-cvs;
@@ -93,7 +90,7 @@ let
       {
         failed =
           pkgs.testers.testBuildFailure
-            (buildCMakeProject { inherit pkgs src lockFile; }).packages.purifier-basic;
+            (buildCMakeProject { inherit src lockFile; }).packages.purifier-basic;
       }
       ''
         grep -q -- ${lib.escapeShellArg pattern} $failed/testBuildFailure.log || {
@@ -357,7 +354,6 @@ in
   conformance-external =
     let
       external = buildCMakeProject {
-        inherit pkgs;
         src = lib.fileset.toSource {
           root = ./fixtures/basic;
           fileset = lib.fileset.difference ./fixtures/basic basicLockFile;
@@ -371,6 +367,24 @@ in
       [ "$(${package}/bin/greet --name external)" = "Hello, external!" ]
       touch $out
     '';
+
+  # A real-world project: libcpr/cpr, built from a lockfile kept in
+  # tests/real-world/cpr, with its test suites run.
+  real-world-cpr =
+    (import ./real-world/cpr {
+      inherit pkgs buildCMakeProject;
+    }).tests;
+
+  # The source and the development shell that tests/relock-fixtures.sh
+  # locks cpr with.
+  real-world-cpr-src =
+    (import ./real-world/cpr {
+      inherit pkgs buildCMakeProject;
+    }).src;
+  real-world-cpr-shell =
+    (import ./real-world/cpr {
+      inherit pkgs buildCMakeProject cmake-purifier;
+    }).shell;
 
   nix-library = import ./nix-library.nix { inherit pkgs purifier; };
 

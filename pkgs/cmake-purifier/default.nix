@@ -39,7 +39,7 @@
 # garbage-collector root, .cmake-purifier/sources-root. It
 # copies the FetchContent dependencies to .cmake-purifier/sources and
 # writes .cmake-purifier/initial-cache.txt, the initial cache of the
-# everyday loop: `cmake -C .cmake-purifier/initial-cache.txt -B <build
+# development loop: `cmake -C .cmake-purifier/initial-cache.txt -B <build
 # dir>` points FetchContent at the copies and git, hg, svn and cvs at the
 # locked checkouts, and sets the configure arguments of the lock run and
 # CMAKE_EXPORT_COMPILE_COMMANDS, for the editor. After a prefetch, the
@@ -172,6 +172,10 @@ writeShellApplication {
       export http_proxy="http://127.0.0.1:$1" https_proxy="http://127.0.0.1:$1"
       export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy"
       unset ALL_PROXY all_proxy
+      # Requests to the machine itself, such as a test's own server, are
+      # no downloads, and go around the proxy. Every other host goes
+      # through it, whatever the user's NO_PROXY names.
+      export no_proxy="localhost,127.0.0.1,::1" NO_PROXY="localhost,127.0.0.1,::1"
       export SSL_CERT_FILE="$2" NIX_SSL_CERT_FILE="$2" CURL_CA_BUNDLE="$2"
     }
 

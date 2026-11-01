@@ -71,7 +71,7 @@ anything the build itself downloads.
 
 ## A build from the lockfile
 
-The sandbox build and the everyday loop after `cmake-purifier prefetch`
+The sandbox build and the development loop after `cmake-purifier prefetch`
 give every download its locked copy:
 
 - FetchContent dependencies come from `FETCHCONTENT_SOURCE_DIR_<NAME>`,
@@ -108,8 +108,9 @@ runs the lock.
   its initial cache, `git-shim.sh` and `vcs-shim.sh` serve its
   checkouts, `prefetch-vcs.nix` fetches a Mercurial, Subversion or CVS checkout for
   the hash the lock run records, and `build-cmake-project.nix` is
-  `buildCMakeProject`, which `lib-overlays/default` publishes as
-  `lib.cmake-purifier.buildCMakeProject`. Every fetch goes through the shared library
+  `buildCMakeProject`, which `pkg-overlays/default` adds to the package
+  set. `lib-overlays/default` publishes `lock.nix` as
+  `lib.cmake-purifier.readLock`. Every fetch goes through the shared library
   `purifier`, a flake input, whose `fetchEntry` and `tree` take the
   download entries of the lockfile.
 - `pkgs/cmake-purifier/`: the command.

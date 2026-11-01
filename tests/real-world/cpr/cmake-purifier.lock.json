@@ -1,0 +1,342 @@
+{
+  "version": 3,
+  "project": {
+    "name": "cpr",
+    "version": "1.15.1"
+  },
+  "definitionHash": "5210edcf011122e137f8b0cb99ff57ed794f2469d00e48aea653f7d45964eca0",
+  "cmakeFlags": [
+    "-DCPR_BUILD_TESTS=ON"
+  ],
+  "artifacts": [
+    {
+      "path": "git/https/github.com/rockdaboot/libpsl.git/c486db8d221cbac55f87508d4da4db4497760997",
+      "git": {
+        "url": "https://github.com/rockdaboot/libpsl.git",
+        "rev": "c486db8d221cbac55f87508d4da4db4497760997",
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
+      },
+      "hash": "sha256-yK+9V2csWGKpdBIRGJAU9xg0W53a+XLR+K5vuBDbzO4="
+    },
+    {
+      "path": "https/github.com/cesanta/mongoose/archive/7.23.tar.gz",
+      "url": "https://github.com/cesanta/mongoose/archive/7.23.tar.gz",
+      "mirrors": [
+        "URL_HASH",
+        "SHA256=93208f164038b05d156935b8b725063e1afb3984a362dbcf3a9ea37b6f1f2255",
+        "USES_TERMINAL_DOWNLOAD",
+        "TRUE",
+        "SOURCE_SUBDIR",
+        "?"
+      ],
+      "hash": "sha256-kyCPFkA4sF0VaTW4tyUGPhr7OYSjYtvPOp6je28fIlU="
+    },
+    {
+      "path": "https/github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.xz",
+      "url": "https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.xz",
+      "mirrors": [
+        "URL_HASH",
+        "SHA256=f7ef3ae8a22e521f289803fe93543eb64c329b58aa73a9e224dfd915a2a5f4f7"
+      ],
+      "hash": "sha256-9+866KIuUh8omAP+k1Q+tkwym1iqc6niJN/ZFaKl9Pc="
+    },
+    {
+      "path": "https/github.com/google/googletest/archive/refs/tags/v1.18.0.tar.gz",
+      "url": "https://github.com/google/googletest/archive/refs/tags/v1.18.0.tar.gz",
+      "mirrors": [
+        "URL_HASH",
+        "SHA256=6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5",
+        "USES_TERMINAL_DOWNLOAD",
+        "TRUE"
+      ],
+      "hash": "sha256-bjGRwUVUaLP8NaQX+1ZcHFBxruG35/heMM9IqY032LU="
+    },
+    {
+      "path": "https/github.com/zlib-ng/zlib-ng/archive/2.3.3.tar.gz",
+      "url": "https://github.com/zlib-ng/zlib-ng/archive/2.3.3.tar.gz",
+      "mirrors": [
+        "URL_HASH",
+        "SHA256=f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1",
+        "USES_TERMINAL_DOWNLOAD",
+        "TRUE"
+      ],
+      "hash": "sha256-+cZaqchS64JVtjb9nwfOHEBvBh7Bmi59UIsxjKDJB9E="
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "curl",
+      "artifact": "https/github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.xz",
+      "extract": true,
+      "declared": "url https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.xz"
+    },
+    {
+      "name": "googletest",
+      "artifact": "https/github.com/google/googletest/archive/refs/tags/v1.18.0.tar.gz",
+      "extract": true,
+      "declared": "url https://github.com/google/googletest/archive/refs/tags/v1.18.0.tar.gz"
+    },
+    {
+      "name": "libpsl_src",
+      "artifact": "git/https/github.com/rockdaboot/libpsl.git/c486db8d221cbac55f87508d4da4db4497760997",
+      "declared": "git https://github.com/rockdaboot/libpsl.git 0.23.3"
+    },
+    {
+      "name": "mongoose",
+      "artifact": "https/github.com/cesanta/mongoose/archive/7.23.tar.gz",
+      "extract": true,
+      "declared": "url https://github.com/cesanta/mongoose/archive/7.23.tar.gz"
+    },
+    {
+      "name": "zlib",
+      "artifact": "https/github.com/zlib-ng/zlib-ng/archive/2.3.3.tar.gz",
+      "extract": true,
+      "declared": "url https://github.com/zlib-ng/zlib-ng/archive/2.3.3.tar.gz"
+    }
+  ],
+  "gitCheckouts": [
+    {
+      "url": "https://github.com/rockdaboot/libpsl.git",
+      "ref": "0.23.3",
+      "artifact": "git/https/github.com/rockdaboot/libpsl.git/c486db8d221cbac55f87508d4da4db4497760997"
+    }
+  ],
+  "hgCheckouts": [],
+  "svnCheckouts": [],
+  "cvsCheckouts": [],
+  "outputs": {
+    "files": [
+      "bin/curl-config",
+      "include/cpr/accept_encoding.h",
+      "include/cpr/api.h",
+      "include/cpr/async.h",
+      "include/cpr/async_wrapper.h",
+      "include/cpr/auth.h",
+      "include/cpr/bearer.h",
+      "include/cpr/body.h",
+      "include/cpr/body_view.h",
+      "include/cpr/buffer.h",
+      "include/cpr/callback.h",
+      "include/cpr/cert_info.h",
+      "include/cpr/connect_timeout.h",
+      "include/cpr/connection_pool.h",
+      "include/cpr/cookies.h",
+      "include/cpr/cpr.h",
+      "include/cpr/cprexport.h",
+      "include/cpr/cprtypes.h",
+      "include/cpr/cprver.h",
+      "include/cpr/curl_container.h",
+      "include/cpr/curlholder.h",
+      "include/cpr/curlmultiholder.h",
+      "include/cpr/error.h",
+      "include/cpr/file.h",
+      "include/cpr/filesystem.h",
+      "include/cpr/http_version.h",
+      "include/cpr/interceptor.h",
+      "include/cpr/interface.h",
+      "include/cpr/limit_rate.h",
+      "include/cpr/local_port.h",
+      "include/cpr/local_port_range.h",
+      "include/cpr/low_speed.h",
+      "include/cpr/multipart.h",
+      "include/cpr/multiperform.h",
+      "include/cpr/parameters.h",
+      "include/cpr/payload.h",
+      "include/cpr/proxies.h",
+      "include/cpr/proxyauth.h",
+      "include/cpr/range.h",
+      "include/cpr/redirect.h",
+      "include/cpr/reserve_size.h",
+      "include/cpr/resolve.h",
+      "include/cpr/response.h",
+      "include/cpr/secure_string.h",
+      "include/cpr/session.h",
+      "include/cpr/singleton.h",
+      "include/cpr/sse.h",
+      "include/cpr/ssl_ctx.h",
+      "include/cpr/ssl_options.h",
+      "include/cpr/status_codes.h",
+      "include/cpr/threadpool.h",
+      "include/cpr/threadpool_backend.h",
+      "include/cpr/timeout.h",
+      "include/cpr/unix_socket.h",
+      "include/cpr/user_agent.h",
+      "include/cpr/util.h",
+      "include/cpr/verbose.h",
+      "include/curl/curl.h",
+      "include/curl/curlver.h",
+      "include/curl/easy.h",
+      "include/curl/header.h",
+      "include/curl/mprintf.h",
+      "include/curl/multi.h",
+      "include/curl/options.h",
+      "include/curl/stdcheaders.h",
+      "include/curl/system.h",
+      "include/curl/typecheck-gcc.h",
+      "include/curl/urlapi.h",
+      "include/curl/websockets.h",
+      "include/gmock/gmock-actions.h",
+      "include/gmock/gmock-cardinalities.h",
+      "include/gmock/gmock-function-mocker.h",
+      "include/gmock/gmock-matchers.h",
+      "include/gmock/gmock-more-actions.h",
+      "include/gmock/gmock-more-matchers.h",
+      "include/gmock/gmock-nice-strict.h",
+      "include/gmock/gmock-spec-builders.h",
+      "include/gmock/gmock.h",
+      "include/gmock/internal/custom/README.md",
+      "include/gmock/internal/custom/gmock-generated-actions.h",
+      "include/gmock/internal/custom/gmock-matchers.h",
+      "include/gmock/internal/custom/gmock-port.h",
+      "include/gmock/internal/gmock-internal-utils.h",
+      "include/gmock/internal/gmock-port.h",
+      "include/gmock/internal/gmock-pp.h",
+      "include/gtest/gtest-assertion-result.h",
+      "include/gtest/gtest-death-test.h",
+      "include/gtest/gtest-matchers.h",
+      "include/gtest/gtest-message.h",
+      "include/gtest/gtest-param-test.h",
+      "include/gtest/gtest-printers.h",
+      "include/gtest/gtest-spi.h",
+      "include/gtest/gtest-test-part.h",
+      "include/gtest/gtest-typed-test.h",
+      "include/gtest/gtest.h",
+      "include/gtest/gtest_pred_impl.h",
+      "include/gtest/gtest_prod.h",
+      "include/gtest/internal/custom/README.md",
+      "include/gtest/internal/custom/gtest-port.h",
+      "include/gtest/internal/custom/gtest-printers.h",
+      "include/gtest/internal/custom/gtest.h",
+      "include/gtest/internal/gtest-death-test-internal.h",
+      "include/gtest/internal/gtest-filepath.h",
+      "include/gtest/internal/gtest-internal.h",
+      "include/gtest/internal/gtest-param-util.h",
+      "include/gtest/internal/gtest-port-arch.h",
+      "include/gtest/internal/gtest-port.h",
+      "include/gtest/internal/gtest-string.h",
+      "include/gtest/internal/gtest-type-util.h",
+      "include/zconf.h",
+      "include/zlib.h",
+      "include/zlib_name_mangling.h",
+      "lib/cmake/CURL/CURLConfig.cmake",
+      "lib/cmake/CURL/CURLConfigVersion.cmake",
+      "lib/cmake/CURL/CURLTargets-release.cmake",
+      "lib/cmake/CURL/CURLTargets.cmake",
+      "lib/cmake/CURL/FindBrotli.cmake",
+      "lib/cmake/CURL/FindCares.cmake",
+      "lib/cmake/CURL/FindGSS.cmake",
+      "lib/cmake/CURL/FindGnuTLS.cmake",
+      "lib/cmake/CURL/FindLDAP.cmake",
+      "lib/cmake/CURL/FindLibbacktrace.cmake",
+      "lib/cmake/CURL/FindLibgsasl.cmake",
+      "lib/cmake/CURL/FindLibidn2.cmake",
+      "lib/cmake/CURL/FindLibpsl.cmake",
+      "lib/cmake/CURL/FindLibssh.cmake",
+      "lib/cmake/CURL/FindLibssh2.cmake",
+      "lib/cmake/CURL/FindLibuv.cmake",
+      "lib/cmake/CURL/FindMbedTLS.cmake",
+      "lib/cmake/CURL/FindNGHTTP2.cmake",
+      "lib/cmake/CURL/FindNGHTTP3.cmake",
+      "lib/cmake/CURL/FindNGTCP2.cmake",
+      "lib/cmake/CURL/FindNettle.cmake",
+      "lib/cmake/CURL/FindQuiche.cmake",
+      "lib/cmake/CURL/FindRustls.cmake",
+      "lib/cmake/CURL/FindWolfSSL.cmake",
+      "lib/cmake/CURL/FindZstd.cmake",
+      "lib/cmake/GTest/GTestConfig.cmake",
+      "lib/cmake/GTest/GTestConfigVersion.cmake",
+      "lib/cmake/GTest/GTestTargets-release.cmake",
+      "lib/cmake/GTest/GTestTargets.cmake",
+      "lib/cmake/ZLIB/ZLIB-targets-release.cmake",
+      "lib/cmake/ZLIB/ZLIB-targets.cmake",
+      "lib/cmake/ZLIB/zlib-config-version.cmake",
+      "lib/cmake/ZLIB/zlib-config.cmake",
+      "lib/cmake/cpr/cprTargets-release.cmake",
+      "lib/cmake/cpr/cprTargets.cmake",
+      "lib/libcpr.so",
+      "lib/libcpr.so.1",
+      "lib/libcpr.so.1.15.1",
+      "lib/libcurl.so",
+      "lib/libcurl.so.4",
+      "lib/libcurl.so.4.8.0",
+      "lib/libgmock.so",
+      "lib/libgmock.so.1.18.0",
+      "lib/libgmock_main.so",
+      "lib/libgmock_main.so.1.18.0",
+      "lib/libgtest.so",
+      "lib/libgtest.so.1.18.0",
+      "lib/libgtest_main.so",
+      "lib/libgtest_main.so.1.18.0",
+      "lib/libz.a",
+      "lib/libz.so",
+      "lib/libz.so.1",
+      "lib/libz.so.1.3.1.zlib-ng",
+      "lib/pkgconfig/gmock.pc",
+      "lib/pkgconfig/gmock_main.pc",
+      "lib/pkgconfig/gtest.pc",
+      "lib/pkgconfig/gtest_main.pc",
+      "lib/pkgconfig/libcurl.pc",
+      "lib/pkgconfig/zlib.pc"
+    ],
+    "targets": {
+      "cpr": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libcpr.so",
+          "lib/libcpr.so"
+        ]
+      },
+      "gmock": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libgmock.so",
+          "lib/libgmock.so"
+        ]
+      },
+      "gmock_main": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libgmock_main.so",
+          "lib/libgmock_main.so"
+        ]
+      },
+      "gtest": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libgtest.so",
+          "lib/libgtest.so"
+        ]
+      },
+      "gtest_main": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libgtest_main.so",
+          "lib/libgtest_main.so"
+        ]
+      },
+      "libcurl_shared": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libcurl.so",
+          "lib/libcurl.so"
+        ]
+      },
+      "zlib-ng": {
+        "type": "SHARED_LIBRARY",
+        "files": [
+          "lib/libz.so",
+          "lib/libz.so"
+        ]
+      },
+      "zlib-ng-static": {
+        "type": "STATIC_LIBRARY",
+        "files": [
+          "lib/libz.a"
+        ]
+      }
+    }
+  },
+  "contentHash": "sha256:1d205f4a414946e664a3c1fd7503eb046269994ad0df45a3b60c757b5e01840e"
+}

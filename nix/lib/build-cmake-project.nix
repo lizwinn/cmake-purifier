@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: MIT
 #
 # buildCMakeProject: builds and installs a CMake project in the sandbox
-# from its cmake-purifier lockfile. The flake's library publishes it as
-# `lib.cmake-purifier.buildCMakeProject`.
+# from its cmake-purifier lockfile. It is a package for callPackage, which
+# the flake's default package overlay adds to a package set, where nixpkgs
+# keeps its own builders. It takes the packages it builds with by name, so
+# buildCMakeProject.override replaces them.
 #
-#   lib.cmake-purifier.buildCMakeProject { inherit pkgs; src = ./.; }
+#   { buildCMakeProject }: (buildCMakeProject { src = ./.; }).packages.<name>
 #
-# The package is stdenv.mkDerivation of `pkgs` with nixpkgs' cmake setup
-# hook, so every mkDerivation argument works as usual: `buildInputs` for
-# the libraries find_package() looks for, and so on. The arguments of the
+# The package is stdenv.mkDerivation with nixpkgs' cmake setup hook, so
+# every mkDerivation argument works as usual: `buildInputs` for the
+# libraries find_package() looks for, and so on. The arguments of the
 # builder itself:
 #
-# - `pkgs`: the package set that builds the project and fetches its
-#   downloads.
 # - `src`: the project.
 # - `lockFile`: the lockfile, by default `cmake-purifier.lock.json` at the
 #   root of `src`. A lockfile outside `src` is the one the build reads,
@@ -54,31 +54,36 @@
 #   any Nix build.
 # - `fetches`: the `entries` of the lock in memory (readLock, lock.nix),
 #   the download entries of the shared library that the build fetches.
-{ purifier }:
 {
-  pkgs,
+  lib,
+  stdenv,
+  cmake,
+  git,
+  mercurial,
+  subversion,
+  cvs,
+  mitm-cache,
+  gnutar,
+  runCommand,
+  callPackage,
+  # The shared library's functions (lib.purifier of the purifier flake),
+  # which the package overlay passes.
+  purifier,
+}:
+{
   src,
   lockFile ? src + "/cmake-purifier.lock.json",
   fetchers ? { },
   cmakeFlags ? [ ],
   nativeBuildInputs ? [ ],
   preConfigure ? "",
+  preCheck ? "",
   postInstall ? "",
   passthru ? { },
   ...
 }@args:
 let
-  inherit (pkgs)
-    lib
-    stdenv
-    cmake
-    git
-    mercurial
-    subversion
-    cvs
-    mitm-cache
-    ;
-  sources = pkgs.callPackage ./sources.nix {
+  sources = callPackage ./sources.nix {
     inherit lockFile fetchers purifier;
     projectSrc = src;
   };
@@ -103,7 +108,6 @@ let
   package = stdenv.mkDerivation (
     finalAttrs:
     removeAttrs args [
-      "pkgs"
       "lockFile"
       "fetchers"
     ]
@@ -117,6 +121,10 @@ let
       mitmCache = "${sources.tree}/http";
       cmakeFlags = lock.cmakeFlags ++ cmakeFlags;
       preConfigure = ''
+        # mitm-cache is the proxy of the whole build, the tests included.
+        # Requests to the machine itself, such as a test's own server, are
+        # no downloads, and go around it.
+        export no_proxy="localhost,127.0.0.1,::1" NO_PROXY="localhost,127.0.0.1,::1"
         if [ "$(bash ${./definition-hash.sh} .)" != ${lib.escapeShellArg lock.definitionHash} ]; then
           echo "cmake-purifier: ${toString lockFile} is older than the project: a CMakeLists.txt or *.cmake file changed since it was written. Run \`cmake-purifier lock\` to lock the project again." >&2
           exit 1
@@ -131,6 +139,15 @@ let
       + preConfigure;
       lockedOutputs = lib.concatMapStrings (f: "${f}\n") outputs.files;
       passAsFile = [ "lockedOutputs" ];
+      # The lock run builds without running the tests, so the lockfile
+      # holds no download of the tests. They run without mitm-cache as
+      # their proxy and without the exceptions to it, so that a test of a
+      # host that does not resolve, or of a proxy of its own, sees the
+      # sandbox without a network.
+      preCheck = ''
+        unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY
+      ''
+      + preCheck;
       postInstall = postInstall + ''
         missing=0
         while IFS= read -r file; do
@@ -164,9 +181,9 @@ in
   };
 
   release =
-    pkgs.runCommand "${pname}-${version}-release"
+    runCommand "${pname}-${version}-release"
       {
-        nativeBuildInputs = [ pkgs.gnutar ];
+        nativeBuildInputs = [ gnutar ];
       }
       ''
         mkdir $out

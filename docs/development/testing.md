@@ -50,6 +50,10 @@ the sandbox are CI jobs of the same name.
      a lockfile and the lockfile kept outside it.
    - `lock-urls` and `lock-records` check the URL rules and the reading of
      the records of the lock run (`lock/urls.py`, `lock/records.py`).
+   - `real-world-cpr` builds libcpr/cpr 1.15.1 from its pinned source and
+     the lockfile in `tests/real-world/cpr`, and runs its test suites.
+     `real-world-cpr-src` and `real-world-cpr-shell` are the source and
+     the development shell that the relock locks it with.
    - `nix-library` runs `tests/nix-library.nix`, which applies the library
      to a hand-written lockfile with fetchers that download nothing.
    - `cmake-purifier` builds the command, which runs shellcheck on it.
@@ -59,7 +63,7 @@ the sandbox are CI jobs of the same name.
    sandbox, on copies of `nix/lib` and the lockfile, so that they can
    match the error message.
 2. **conformance-offline** (`tests/offline.sh`) prefetches every fixture
-   with the network, then runs its everyday loop of plain `cmake`,
+   with the network, then runs its development loop of plain `cmake`,
    `cmake --build`, ctest and clangd in a network namespace without a
    network. It runs after the flake checks, which fetch the vcs fixture's
    checkouts. Without user namespaces, it runs the loop on the host's
@@ -70,7 +74,7 @@ the sandbox are CI jobs of the same name.
    message. They prefetch a project from a lockfile outside it, and run
    `publish` with a stand-in for gh.
 4. **conformance-relock** (`tests/relock-fixtures.sh`) runs the lock run
-   on the fixtures, with the network. CI fails when a lockfile changes, so
+   on the fixtures and on cpr, with the network. CI fails when a lockfile changes, so
    the lock run must reproduce the committed lockfiles byte for byte.
    **conformance-rebuild** is the CI job that builds fixtures again with
    `nix build --rebuild`. **conformance-update** (`tests/update.sh`)

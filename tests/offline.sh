@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# conformance-offline: after `cmake-purifier prefetch`, the everyday loop
+# conformance-offline: after `cmake-purifier prefetch`, the development loop
 # of each fixture works with no network. The loop is CMake's own commands
 # on the initial cache that the prefetch writes: the configure, the build,
 # ctest, and clangd on the build directory's compile_commands.json. The

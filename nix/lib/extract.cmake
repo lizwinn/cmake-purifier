@@ -20,4 +20,6 @@ list(LENGTH contents count)
 if(NOT count EQUAL 1 OR NOT IS_DIRECTORY "${contents}")
   set(contents "${WORK}")
 endif()
+# file(INSTALL) would print a line per file of the archive.
+set(CMAKE_INSTALL_MESSAGE NEVER)
 file(INSTALL "${contents}/" DESTINATION "${OUT}" USE_SOURCE_PERMISSIONS)

@@ -24,16 +24,30 @@ needs, because it runs a real configure, build and install in a scratch
 directory. A project that needs more than the shell above, such as
 OpenSSL for `find_package(OpenSSL)`, locks in its own development shell
 with `cmake-purifier.packages.${system}.default` added to its packages.
+That shell is a `mkShell` with CMake among its inputs, whose setup hook
+adds the libraries to `CMAKE_PREFIX_PATH`, where `find_package()` looks.
 Arguments after `lock` go to the configure, and the lockfile keeps them:
 every build from the lockfile passes them first, since options such as
 `-DBUILD_TESTING=ON` decide what a build downloads and installs.
 `CMAKE_BUILD_PARALLEL_LEVEL` sets the number of jobs of the lock run's
 build, which is the number of cores by default.
 
-Commit `cmake-purifier.lock.json`, and build the project with the
-library's `buildCMakeProject`:
+Commit `cmake-purifier.lock.json`. The flake's `overlays.default` adds
+`buildCMakeProject` to a package set, where nixpkgs keeps its own
+builders, and a package takes it by name:
 
 ```nix
+# package.nix
+{ buildCMakeProject, zlib }:
+buildCMakeProject {
+  src = ./.;
+  # Libraries that find_package() looks for come from nixpkgs as usual.
+  buildInputs = [ zlib ];
+}
+```
+
+```nix
+# flake.nix
 {
   inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
   inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
@@ -41,13 +55,11 @@ library's `buildCMakeProject`:
   outputs = { nixpkgs, cmake-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-      project = cmake-purifier.lib.cmake-purifier.buildCMakeProject {
-        inherit pkgs;
-        src = ./.;
-        # Libraries that find_package() looks for come from nixpkgs as usual.
-        buildInputs = [ pkgs.zlib ];
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ cmake-purifier.overlays.default ];
       };
+      project = pkgs.callPackage ./package.nix { };
     in
     {
       # The package is named after the top-level project().
@@ -62,7 +74,10 @@ The result has four attributes, each known at evaluation time:
 - `packages.<name>` is the installed project, under the name of the
   top-level `project()`. Its `targets.<name>` and `installed."<path>"`
   name every output from the lockfile, without a build.
-- `tests` is the same build with ctest run after it.
+- `tests` is the same build with ctest run after it. The lock run does not
+  run the tests, so the lockfile holds nothing that the tests download,
+  and ctest runs without the replaying proxy: a test sees the sandbox
+  without a network, as it expects of a host that does not resolve.
 - `release` is a directory with the installed project as one
   reproducible tarball, which `cmake-purifier publish <tag> <installable>`
   uploads to a GitHub release with `gh`.
@@ -72,8 +87,9 @@ The result has four attributes, each known at evaluation time:
 
 `buildCMakeProject` takes every argument of `stdenv.mkDerivation`, and
 nixpkgs' CMake setup hook runs the build. `nix/lib/build-cmake-project.nix`
-documents the arguments of its own: `pkgs`, `src`, `lockFile`,
-`cmakeFlags` (after the locked ones), and `fetchers`. A lockfile kept
+documents the arguments of its own: `src`, `lockFile`, `cmakeFlags`
+(after the locked ones), and `fetchers`. It takes the packages it builds
+with by name, so `buildCMakeProject.override` replaces them. A lockfile kept
 outside `src`, as `lockFile`, is the one the build reads, so a packaging
 flake can lock a project it does not change. Every command takes it as
 `--lockfile <path>` or from the environment variable
@@ -85,7 +101,7 @@ into the shape that every nix-purifier shares,
 `{ purifier, entries, outputs, problems }`, for tools that read the locks
 of every ecosystem, such as an SBOM generator.
 
-## Everyday loop
+## Development loop
 
 Prefetch the locked downloads once, then work with CMake's own commands
 on the initial cache that the prefetch writes:
@@ -114,10 +130,8 @@ cmake-purifier replay -- cmake --build build
 ```
 
 `prefetch` says when a project needs this. CMake makes these downloads
-with its own HTTP client, in `cmake -P` scripts that the build runs, so
-only a proxy reaches them. That is why cmake-purifier has `replay` as a
-command beyond the `lock`, `update`, `prefetch` and `publish` that every
-nix-purifier has.
+with its own HTTP client, some of them in `cmake -P` scripts that the
+build runs, so only a proxy reaches them.
 
 To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
 `ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
@@ -130,14 +144,9 @@ HEAD, or a CVS checkout without a tag, stays at its locked revision.
 `cmake-purifier update` moves such checkouts to where their refs point
 now, and relocks with the configure arguments of the lockfile.
 `cmake-purifier update <name>...` moves only the named FetchContent
-dependencies or repositories. The CI job `conformance-update` checks this
-on a project that follows two branches of local git repositories. It
-checks the commits the lockfile holds and runs `readLock` on it, but
-builds nothing, because the Nix sandbox cannot read repositories outside
-the store. The `vcs` flake check builds from checkouts of the same kind,
-from repositories in the store.
+dependencies or repositories.
 
-## Offline work
+## Working offline
 
 `cmake-purifier prefetch` builds every download of the lockfile through
 Nix and keeps it alive with a garbage-collector root,
@@ -150,13 +159,6 @@ only the project's downloads. The compilers, CMake itself and clangd come
 from the development shell, which `nix develop` keeps in the store once
 it has built.
 
-The CI job `conformance-offline` (`tests/offline.sh`) checks this. It
-prefetches each fixture with the network, then runs its everyday loop
-inside `unshare -rn`, a network namespace with only the loopback
-interface. On a machine without unprivileged user namespaces, the script
-runs the loop on the host's network instead and says so; CI sets
-`CMAKE_PURIFIER_REQUIRE_OFFLINE=1`, which makes it fail there instead.
-
 ## Editor
 
 The initial cache sets `CMAKE_EXPORT_COMPILE_COMMANDS`, so the configure
@@ -165,7 +167,7 @@ find every dependency's headers in the prefetched sources, offline. The
 development shell of this flake has clangd; a project's own shell takes
 `clang-tools` from nixpkgs.
 
-## Errors and fixes
+## Troubleshooting
 
 Each of these stops the command, the evaluation or the build with a
 message that names the problem and the command that fixes it:
@@ -191,7 +193,7 @@ message that names the problem and the command that fixes it:
   the message names the file, and says to restore it from version control
   or run `cmake-purifier lock`.
 
-## Sources supported and refused
+## Supported language repositories
 
 The lock run records downloads from HTTP and HTTPS servers, through
 mitmproxy as the proxy of CMake and everything it runs, and from git,
@@ -220,9 +222,8 @@ These are refused or unsupported:
   sandbox has no credentials. `buildCMakeProject` takes fetchers that
   have them in `fetchers`, such as nixpkgs' fetchgit with a `netrcPhase`
   as `fetchers.fetchgit`; a company mirror goes in `fetchers.fetchurl`.
-- **CVS on aarch64-linux.** nixpkgs' cvs aborts on aarch64-linux, in the
-  2006 copy of gnulib's vasnprintf that it bundles. A CVS checkout locks
-  and builds on x86_64-linux only.
+- **CVS on aarch64-linux.** nixpkgs' cvs does not run on aarch64-linux, so
+  a project with a CVS checkout locks and builds on x86_64-linux only.
 - **Version-control commands other than the checkout steps, on a locked
   checkout.** A locked checkout holds the files of its revision and no
   history, which keeps its hash reproducible. The shims answer the
@@ -231,12 +232,67 @@ These are refused or unsupported:
   `git log` in a dependency's CMakeLists.txt, fails with a message that
   names it.
 
-## Real-world projects
+## Examples
 
-The fixtures in `tests/fixtures` cover each kind of download above. A
-trial on [libcpr/cpr](https://github.com/libcpr/cpr) 1.15.1, which takes
-curl, zlib-ng, googletest and mongoose from FetchContent archives and
-libpsl from a FetchContent git checkout, is pending.
+### cpr
+
+[cpr](https://github.com/libcpr/cpr) is a C++ HTTP library whose build
+takes curl, zlib-ng, googletest and mongoose from FetchContent archives,
+and libpsl from a FetchContent git checkout that it builds with meson. It
+finds OpenSSL with `find_package()`, so its development shell has OpenSSL
+besides the tools of its build. A `flake.nix` in a checkout of cpr:
+
+```nix
+{
+  inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
+  inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
+
+  outputs = { nixpkgs, cmake-purifier, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ cmake-purifier.overlays.default ];
+      };
+      nativeBuildInputs = [ pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
+      buildInputs = [ pkgs.openssl ];
+      cpr = pkgs.buildCMakeProject {
+        inherit nativeBuildInputs buildInputs;
+        src = ./.;
+        # cpr's test suites each start a server on the same port.
+        enableParallelChecking = false;
+      };
+    in
+    {
+      packages.${system}.default = cpr.packages.cpr;
+      checks.${system}.tests = cpr.tests;
+      devShells.${system}.default = pkgs.mkShell {
+        inherit buildInputs;
+        nativeBuildInputs = nativeBuildInputs ++ [
+          pkgs.cmake
+          pkgs.clang-tools
+          cmake-purifier.packages.${system}.default
+        ];
+      };
+    };
+}
+```
+
+Lock it with its tests, work on it, and build it with Nix:
+
+```zsh
+nix develop
+cmake-purifier lock -DCPR_BUILD_TESTS=ON
+cmake-purifier prefetch
+cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake --build build
+ctest --test-dir build
+nix build
+nix flake check
+```
+
+cpr's tests need no network: they talk to a server that the tests start
+on the machine itself.
 
 ## Credits
 

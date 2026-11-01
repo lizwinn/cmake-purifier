@@ -71,7 +71,8 @@
             checks = import ../../../tests {
               inherit pkgs;
               inherit (self.lib) purifier;
-              inherit (self.lib.cmake-purifier) buildCMakeProject readLock;
+              inherit ((pkgs.extend self.overlays.default)) buildCMakeProject;
+              inherit (self.lib.cmake-purifier) readLock;
               inherit (self.packages.${system}) cmake-purifier;
             };
             treefmt.programs.nixfmt.enable = true;

@@ -62,7 +62,7 @@ jobs:
         if: matrix.job == 'conformance-relock'
         run: |
           tests/relock-fixtures.sh
-          git diff --exit-code -- tests/fixtures
+          git diff --exit-code -- tests/fixtures tests/real-world
       - name: Build fixtures twice and compare
         if: matrix.job == 'conformance-rebuild'
         run: |
@@ -71,7 +71,7 @@ jobs:
             nix build -L --no-link ".#checks.$system.$fixture"
             nix build -L --no-link --rebuild ".#checks.$system.$fixture"
           done
-      - name: Run the everyday loop offline
+      - name: Run the development loop offline
         if: matrix.job == 'conformance-offline'
         run: |
           # Ubuntu's AppArmor stops unprivileged user namespaces, which
