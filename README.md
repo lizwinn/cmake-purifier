@@ -32,23 +32,39 @@ every build from the lockfile passes them first, since options such as
 `CMAKE_BUILD_PARALLEL_LEVEL` sets the number of jobs of the lock run's
 build, which is the number of cores by default.
 
-Commit `cmake-purifier.lock.json`. The flake's `overlays.default` adds
-one attribute to a package set, the scope `cmake-purifier`. The scope
-holds the builder `buildCMakeProject` and the command, and a package takes
-the scope by name:
+Commit `cmake-purifier.lock.json`, and build the project with Nix from its
+directory. The flake has an overlay, `overlays.default`, that adds one
+attribute to a package set, the scope `cmake-purifier`. The scope holds
+the builder `buildCMakeProject` and the command. The project gets no Nix
+file:
 
-```nix
-# package.nix
-{ cmake-purifier, zlib }:
-cmake-purifier.buildCMakeProject {
-  src = ./.;
-  # Libraries that find_package() looks for come from nixpkgs as usual.
-  buildInputs = [ zlib ];
-}
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.cmake-purifier.buildCMakeProject { src = ./.; }).packages.my-project'
 ```
 
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
+The package is named after the top-level `project()`. Libraries that
+`find_package()` looks for come from nixpkgs as usual, as `buildInputs =
+[ pkgs.zlib ];` beside `src`.
+
+A project whose authors want a flake packages itself with the same call,
+in the project's repository or in another one:
+
 ```nix
-# flake.nix
 {
   inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
   inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
@@ -60,10 +76,9 @@ cmake-purifier.buildCMakeProject {
         inherit system;
         overlays = [ cmake-purifier.overlays.default ];
       };
-      project = pkgs.callPackage ./package.nix { };
+      project = pkgs.cmake-purifier.buildCMakeProject { src = ./.; };
     in
     {
-      # The package is named after the top-level project().
       packages.${system}.default = project.packages.my-project;
       checks.${system}.tests = project.tests;
     };
@@ -250,61 +265,55 @@ These are refused or unsupported:
 [cpr](https://github.com/libcpr/cpr) is a C++ HTTP library whose build
 takes curl, zlib-ng, googletest and mongoose from FetchContent archives,
 and libpsl from a FetchContent git checkout that it builds with meson. It
-finds OpenSSL with `find_package()`, so its development shell has OpenSSL
-besides the tools of its build. A `flake.nix` in a checkout of cpr:
-
-```nix
-{
-  inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
-  inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
-
-  outputs = { nixpkgs, cmake-purifier, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ cmake-purifier.overlays.default ];
-      };
-      # curl's build writes its man pages when it finds Perl.
-      nativeBuildInputs = [ pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
-      buildInputs = [ pkgs.openssl ];
-      cpr = pkgs.cmake-purifier.buildCMakeProject {
-        inherit nativeBuildInputs buildInputs;
-        src = ./.;
-        # cpr's test suites each start a server on the same port.
-        enableParallelChecking = false;
-      };
-    in
-    {
-      packages.${system}.default = cpr.packages.cpr;
-      checks.${system}.tests = cpr.tests;
-      devShells.${system}.default = pkgs.mkShell {
-        inherit buildInputs;
-        nativeBuildInputs = nativeBuildInputs ++ [
-          pkgs.cmake
-          pkgs.clang-tools
-          cmake-purifier.packages.${system}.default
-        ];
-      };
-    };
-}
-```
-
-Lock it with its tests, work on it, and build it with Nix:
+finds OpenSSL with `find_package()`, so locking it takes a shell with
+OpenSSL besides the tools of its build. In a checkout of cpr, start that
+shell, lock the project with its tests, and work on it:
 
 ```zsh
-nix develop
+nix-shell -E '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  pkgs.mkShell {
+    # curl writes its man pages when it finds Perl.
+    nativeBuildInputs = [
+      pkgs.cmake pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3
+      pkgs.clang-tools pkgs.cmake-purifier.cmake-purifier
+    ];
+    buildInputs = [ pkgs.openssl ];
+  }'
 cmake-purifier lock -DCPR_BUILD_TESTS=ON
 cmake-purifier prefetch
 cmake -B build -C .cmake-purifier/initial-cache.txt
 cmake --build build
 ctest --test-dir build
-nix build
-nix flake check
+```
+
+Then build it with Nix from the same directory, with the same inputs:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.cmake-purifier.buildCMakeProject {
+    src = ./.;
+    nativeBuildInputs = [ pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
+    buildInputs = [ pkgs.openssl ];
+  }).packages.cpr'
 ```
 
 cpr's tests need no network: they talk to a server that the tests start
-on the machine itself.
+on the machine itself. Its test suites each use the same port, so a
+build that runs them sets `enableParallelChecking = false;` beside `src`.
 
 ## Credits
 
