@@ -189,6 +189,14 @@ message that names the problem and the command that fixes it:
   its own content, and an edit, such as a changed hash of a download,
   stops the evaluation: "… was edited: its content no longer matches its
   contentHash".
+- **An output that the sandbox build did not install**: "the lockfile
+  names the output …, which the install did not write". The lock run
+  builds with every program on the `PATH` of the shell, and `nix develop`
+  keeps the system `PATH` after the one of the shell. A build that does
+  more when it finds a program installs more in the lock run than in the
+  sandbox. The build of curl is one such build: it writes its man pages
+  when it finds Perl. Add the program to the inputs of the package and of
+  the shell, and run `cmake-purifier lock` again.
 - **A lockfile that is not valid JSON, or not a cmake-purifier lockfile**:
   the message names the file, and says to restore it from version control
   or run `cmake-purifier lock`.
@@ -254,7 +262,8 @@ besides the tools of its build. A `flake.nix` in a checkout of cpr:
         inherit system;
         overlays = [ cmake-purifier.overlays.default ];
       };
-      nativeBuildInputs = [ pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
+      # curl's build writes its man pages when it finds Perl.
+      nativeBuildInputs = [ pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
       buildInputs = [ pkgs.openssl ];
       cpr = pkgs.buildCMakeProject {
         inherit nativeBuildInputs buildInputs;

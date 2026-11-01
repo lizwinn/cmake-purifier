@@ -20,7 +20,10 @@ let
     rev = "3139b2682f0b1d6af8c7ae48cf400f9d9988deec";
     hash = "sha256-f4Byq02cqxXiQ0M1/8nfJ0vr4l5rmbyqbdoR7f6stDM=";
   };
+  # curl's build writes its man pages when it finds Perl, so Perl is an
+  # input of the lock run and of the sandbox build alike.
   nativeBuildInputs = [
+    pkgs.perl
     pkgs.pkg-config
     pkgs.meson
     pkgs.ninja
