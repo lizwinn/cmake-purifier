@@ -23,10 +23,20 @@
 #   `<scheme>/<host>/<path>` of its URL, the layout mitm-cache replays.
 {
   lib,
-  pkgs,
   stdenv,
   runCommand,
   cmake,
+  # The fetchers of the entries, and the packages that the steps after a
+  # fetch build with, which fetchEntry of the shared library takes by name.
+  fetchurl,
+  fetchgit,
+  fetchhg,
+  fetchsvn,
+  fetchcvs,
+  unzip,
+  zstd,
+  python3,
+  writeText,
   purifier,
   lockFile,
   # The project's source, for the check that the lockfile is not older
@@ -57,7 +67,18 @@ let
   );
 
   fetcherArgs = {
-    inherit pkgs;
+    inherit
+      fetchurl
+      fetchgit
+      fetchhg
+      fetchsvn
+      fetchcvs
+      runCommand
+      unzip
+      zstd
+      python3
+      writeText
+      ;
   }
   // fetchers;
 
