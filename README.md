@@ -1,61 +1,108 @@
 # cmake-purifier
 
-A command and a Nix library that build a CMake project in the Nix sandbox
-from a lockfile of everything its build downloads. CMake still configures
-and builds the project. `cmake-purifier lock` configures, builds and
-installs the project once with the network and records every download,
-whatever CMake command makes it: `FetchContent`, `ExternalProject_Add()`,
-`file(DOWNLOAD)` at configure or build time, and wrappers on top of them
-such as CPM.cmake. It writes `cmake-purifier.lock.json`, and Nix builds
-the project from it with no Nix files in the project beyond the lockfile.
+cmake-purifier keeps CMake's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
+
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/cmake-purifier'
+```
+
+This installs the purifier CLI. The workflow below prepares the native
+tool's cache, hook or environment; follow that activation step before using
+your usual commands. The ordinary tool itself remains your normal
+installation unless the setup explicitly supplies a toolchain.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
 
 ## Quickstart
 
-Lock the project, from its source directory, in a shell with the
-command, CMake and a C and C++ compiler:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+CMake's normal commands use:
 
 ```zsh
 nix develop github:nix-purifiers/cmake-purifier
 cmake-purifier lock
+cmake-purifier prefetch
+cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake --build build
+ctest --test-dir build
 ```
 
-The lock run needs the network, and the compilers and libraries the build
-needs, because it runs a real configure, build and install in a scratch
-directory. A project that needs more than the shell above, such as
-OpenSSL for `find_package(OpenSSL)`, locks in its own development shell
-with `cmake-purifier.packages.${system}.default` added to its packages.
-That shell is a `mkShell` with CMake among its inputs, whose setup hook
-adds the libraries to `CMAKE_PREFIX_PATH`, where `find_package()` looks.
-Arguments after `lock` go to the configure, and the lockfile keeps them:
-every build from the lockfile passes them first, since options such as
-`-DBUILD_TESTING=ON` decide what a build downloads and installs.
-`CMAKE_BUILD_PARALLEL_LEVEL` sets the number of jobs of the lock run's
-build, which is the number of cores by default.
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-Commit `cmake-purifier.lock.json`, and build the project with Nix from its
-directory. The flake has an overlay, `overlays.default`, that adds one
-attribute to a package set, the scope `cmake-purifier`. The scope holds
-the builder `buildCMakeProject` and the command. The project gets no Nix
-file:
+For downloads outside FetchContent, use the replay commands described in
+[Development loop](#development-loop).
+
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
+
+## Development loop
+
+Prefetch the locked downloads once, then work with CMake's own commands
+on the initial cache that the prefetch writes:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.cmake-purifier.buildCMakeProject { src = ./.; }).packages.my-project'
+cmake-purifier prefetch
+cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake --build build
+ctest --test-dir build
 ```
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+The initial cache points FetchContent at copies of the locked sources and
+git, hg, svn and cvs at the locked checkouts, and sets the configure
+arguments of the lock run. A build directory configured with it keeps
+those settings, so later runs of `cmake --build build` reconfigure with
+them too.
+
+A project that downloads files outside FetchContent, with `file(DOWNLOAD)`
+or `ExternalProject_Add()` with a URL, runs the configure and the build
+under `cmake-purifier replay --`, which starts mitm-cache as their HTTP
+and HTTPS proxy, replaying the locked files:
+
+```zsh
+cmake-purifier replay -- cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake-purifier replay -- cmake --build build
+```
+
+`prefetch` says when a project needs this. CMake makes these downloads
+with its own HTTP client, some of them in `cmake -P` scripts that the
+build runs, so only a proxy reaches them.
+
+To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
+`ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
+and `cmake-purifier prefetch` again, and configure again. A relock takes
+about as long as a clean configure and build of the project.
+
+`lock` keeps what the lockfile already resolved. A checkout whose ref
+moves, such as a `GIT_TAG` that names a branch, a Subversion checkout at
+HEAD, or a CVS checkout without a tag, stays at its locked revision.
+`cmake-purifier update` moves such checkouts to where their refs point
+now, and relocks with the configure arguments of the lockfile.
+`cmake-purifier update <name>...` moves only the named FetchContent
+dependencies or repositories.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 The package is named after the top-level `project()`. Libraries that
 `find_package()` looks for come from nixpkgs as usual, as `buildInputs =
@@ -119,50 +166,29 @@ into the shape that every nix-purifier shares,
 `{ purifier, entries, outputs, problems }`, for tools that read the locks
 of every ecosystem, such as an SBOM generator.
 
-## Development loop
+### One-off builds without a project Nix file
 
-Prefetch the locked downloads once, then work with CMake's own commands
-on the initial cache that the prefetch writes:
-
-```zsh
-cmake-purifier prefetch
-cmake -B build -C .cmake-purifier/initial-cache.txt
-cmake --build build
-ctest --test-dir build
-```
-
-The initial cache points FetchContent at copies of the locked sources and
-git, hg, svn and cvs at the locked checkouts, and sets the configure
-arguments of the lock run. A build directory configured with it keeps
-those settings, so later runs of `cmake --build build` reconfigure with
-them too.
-
-A project that downloads files outside FetchContent, with `file(DOWNLOAD)`
-or `ExternalProject_Add()` with a URL, runs the configure and the build
-under `cmake-purifier replay --`, which starts mitm-cache as their HTTP
-and HTTPS proxy, replaying the locked files:
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
 ```zsh
-cmake-purifier replay -- cmake -B build -C .cmake-purifier/initial-cache.txt
-cmake-purifier replay -- cmake --build build
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.cmake-purifier.buildCMakeProject { src = ./.; }).packages.my-project'
 ```
 
-`prefetch` says when a project needs this. CMake makes these downloads
-with its own HTTP client, some of them in `cmake -P` scripts that the
-build runs, so only a proxy reaches them.
-
-To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
-`ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
-and `cmake-purifier prefetch` again, and configure again. A relock takes
-about as long as a clean configure and build of the project.
-
-`lock` keeps what the lockfile already resolved. A checkout whose ref
-moves, such as a `GIT_TAG` that names a branch, a Subversion checkout at
-HEAD, or a CVS checkout without a tag, stays at its locked revision.
-`cmake-purifier update` moves such checkouts to where their refs point
-now, and relocks with the configure arguments of the lockfile.
-`cmake-purifier update <name>...` moves only the named FetchContent
-dependencies or repositories.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -259,6 +285,11 @@ These are refused or unsupported:
   names it.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### cpr
 
