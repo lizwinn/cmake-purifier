@@ -115,7 +115,9 @@ cmake-purifier replay -- cmake --build build
 
 `prefetch` says when a project needs this. CMake makes these downloads
 with its own HTTP client, in `cmake -P` scripts that the build runs, so
-only a proxy reaches them.
+only a proxy reaches them. That is why cmake-purifier has `replay` as a
+command beyond the `lock`, `update`, `prefetch` and `publish` that every
+nix-purifier has.
 
 To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
 `ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
@@ -128,7 +130,12 @@ HEAD, or a CVS checkout without a tag, stays at its locked revision.
 `cmake-purifier update` moves such checkouts to where their refs point
 now, and relocks with the configure arguments of the lockfile.
 `cmake-purifier update <name>...` moves only the named FetchContent
-dependencies or repositories.
+dependencies or repositories. The CI job `conformance-update` checks this
+on a project that follows two branches of local git repositories. It
+checks the commits the lockfile holds and runs `readLock` on it, but
+builds nothing, because the Nix sandbox cannot read repositories outside
+the store. The `vcs` flake check builds from checkouts of the same kind,
+from repositories in the store.
 
 ## Offline work
 
@@ -136,9 +143,19 @@ dependencies or repositories.
 Nix and keeps it alive with a garbage-collector root,
 `.cmake-purifier/sources-root`, beside the lockfile. After a prefetch, the
 configure, the build, ctest and the editor work with the network cut off.
-The directory `.cmake-purifier/` ignores itself in git. The toolchain
-comes from the development shell, which `nix develop` keeps in the store
-once it has built.
+The directory `.cmake-purifier/` ignores itself in git.
+
+`prefetch` realizes what the lockfile lists, and a CMake lockfile lists
+only the project's downloads. The compilers, CMake itself and clangd come
+from the development shell, which `nix develop` keeps in the store once
+it has built.
+
+The CI job `conformance-offline` (`tests/offline.sh`) checks this. It
+prefetches each fixture with the network, then runs its everyday loop
+inside `unshare -rn`, a network namespace with only the loopback
+interface. On a machine without unprivileged user namespaces, the script
+runs the loop on the host's network instead and says so; CI sets
+`CMAKE_PURIFIER_REQUIRE_OFFLINE=1`, which makes it fail there instead.
 
 ## Editor
 
