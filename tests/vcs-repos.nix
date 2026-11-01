@@ -126,7 +126,15 @@ let
     in
     if found == null then text else "${builtins.elemAt found 0}${repos}${builtins.elemAt found 1}";
 
-  fetchCvs = import ../nix/lib/fetch-cvs.nix { inherit (pkgs) fetchcvs; };
+  # The CVS repository is in the read-only store, and CVSREADONLYFS makes
+  # cvs leave no lock files in it.
+  fetchCvs =
+    args:
+    (pkgs.fetchcvs args).overrideAttrs (old: {
+      env = (old.env or { }) // {
+        CVSREADONLYFS = "1";
+      };
+    });
 in
 {
   inherit repos gitConfig cvsWorks;

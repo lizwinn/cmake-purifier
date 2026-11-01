@@ -20,7 +20,7 @@
 let
   pkgs = import nixpkgs { };
   inherit (pkgs) lib;
-  purifierLib = import "${purifier}/nix/lib" { inherit lib; };
+  purifierLib = import purifier { inherit lib; };
   withStore =
     text:
     let
@@ -49,7 +49,4 @@ let
       };
     };
 in
-purifierLib.fetchEntry {
-  inherit pkgs;
-  fetchcvs = import ./fetch-cvs.nix { inherit (pkgs) fetchcvs; };
-} (contextual // { hash = lib.fakeHash; })
+purifierLib.fetchEntry { inherit pkgs; } (contextual // { hash = lib.fakeHash; })

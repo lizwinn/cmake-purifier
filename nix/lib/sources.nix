@@ -26,7 +26,6 @@
   pkgs,
   runCommand,
   cmake,
-  fetchcvs,
   purifier,
   lockFile,
   # Fetchers that replace the ones fetchEntry uses, by their names
@@ -39,7 +38,6 @@ let
 
   fetcherArgs = {
     inherit pkgs;
-    fetchcvs = import ./fetch-cvs.nix { inherit fetchcvs; };
   }
   // fetchers;
 

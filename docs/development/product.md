@@ -27,8 +27,7 @@ the lock run, the builds from the lockfile, and the limits.
   documents its format, `sources.nix`
   makes the tree a build from the lockfile reads, `write-cache.sh` writes
   its initial cache, `git-shim.sh` and `vcs-shim.sh` serve its
-  checkouts, `fetch-cvs.nix` is the CVS fetcher of the sandbox build,
-  `prefetch-vcs.nix` fetches a Mercurial, Subversion or CVS checkout for
+  checkouts, `prefetch-vcs.nix` fetches a Mercurial, Subversion or CVS checkout for
   the hash the lock run records, and `build-cmake-project.nix` is
   `buildCMakeProject`. Every fetch goes through the shared library
   `purifier`, a flake input, whose `fetchEntry` and `tree` take the

@@ -269,7 +269,7 @@ writeShellApplication {
       mkdir -p "$build/cmake-purifier"
       build=$(realpath "$build")
       tree=$(nix-build --expr \
-        "{ lockFile }: let pkgs = import $nixpkgs { }; in (pkgs.callPackage $nixlib/sources.nix { inherit lockFile; purifier = import $purifierlib/nix/lib { inherit (pkgs) lib; }; }).tree" \
+        "{ lockFile }: let pkgs = import $nixpkgs { }; in (pkgs.callPackage $nixlib/sources.nix { inherit lockFile; purifier = import $purifierlib { inherit (pkgs) lib; }; }).tree" \
         --arg lockFile "$lockfile" --out-link "$build/cmake-purifier/sources-root")
       bash "$nixlib/write-cache.sh" "$tree" "$build/cmake-purifier/sources" "$build/cmake-purifier/cache.cmake" \
         "$lockedProvider" "$nixlib" "$realGit" "$realHg" "$realSvn" "$realCvs"
