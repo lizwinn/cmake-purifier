@@ -16,12 +16,14 @@
       inherit (libOverlays) default;
     };
 
-    # The packages are the `default` entry of this flake's package overlay
-    # registry (pkg-overlays/): the package set applies it by default, and
-    # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # The scope `pkgs.cmake-purifier` is the `default` entry of this
+    # flake's package overlay registry (pkg-overlays/): the package set
+    # applies it by default, and the flake exports it as `pkgOverlays` and
+    # as the plain `overlays.default`. The scope also holds the builder, a
+    # function, so the `packages` output below is the derivations of the
+    # scope, and the automatic export of the scope is off.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
@@ -34,7 +36,9 @@
   perSystem =
     { config, pkgs, ... }:
     {
-      packages.default = config.packages.cmake-purifier;
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.cmake-purifier // {
+        default = config.packages.cmake-purifier;
+      };
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.cmake-purifier
@@ -71,7 +75,7 @@
             checks = import ../../../tests {
               inherit pkgs;
               inherit (self.lib) purifier;
-              inherit ((pkgs.extend self.overlays.default)) buildCMakeProject;
+              inherit ((pkgs.extend self.overlays.default).cmake-purifier) buildCMakeProject;
               inherit (self.lib.cmake-purifier) readLock;
               inherit (self.packages.${system}) cmake-purifier;
             };

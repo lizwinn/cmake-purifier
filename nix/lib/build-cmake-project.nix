@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: MIT
 #
 # buildCMakeProject: builds and installs a CMake project in the sandbox
-# from its cmake-purifier lockfile. It is a package for callPackage, which
-# the flake's default package overlay adds to a package set, where nixpkgs
-# keeps its own builders. It takes the packages it builds with by name, so
-# buildCMakeProject.override replaces them.
+# from its cmake-purifier lockfile. It is a package for callPackage in the
+# scope `pkgs.cmake-purifier`, which the flake's default package overlay
+# adds to a package set. It takes the packages it builds with by name, so
+# `pkgs.cmake-purifier.buildCMakeProject.override` replaces them.
 #
-#   { buildCMakeProject }: (buildCMakeProject { src = ./.; }).packages.<name>
+#   { cmake-purifier }:
+#   (cmake-purifier.buildCMakeProject { src = ./.; }).packages.<name>
 #
 # The package is stdenv.mkDerivation with nixpkgs' cmake setup hook, so
 # every mkDerivation argument works as usual: `buildInputs` for the

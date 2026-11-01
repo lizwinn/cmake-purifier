@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: MIT
 #
-# The default package overlay. It adds the packages of pkgs/ under
-# `pkgs.cmake-purifier`, of which `.cmake-purifier` is the command, and
-# the builder `pkgs.buildCMakeProject` (nix/lib/build-cmake-project.nix)
-# beside them, where nixpkgs keeps its own builders, so a package written
-# for callPackage takes it by name. A consumer that lists this flake in
-# `projects` holds it as `cmake-purifier/default`, which its package sets
-# apply by default.
+# The default package overlay. It adds one attribute to the package set,
+# the scope `pkgs.cmake-purifier`, made with lib.makeScope. The scope holds
+# the command `cmake-purifier` (pkgs/cmake-purifier) and the builder
+# `buildCMakeProject` (nix/lib/build-cmake-project.nix), each a
+# callPackage package of the scope, so a package written for callPackage
+# takes the scope by name:
+#
+#   { cmake-purifier }: (cmake-purifier.buildCMakeProject { src = ./.; }).packages.<name>
+#
+# `pkgs.cmake-purifier.overrideScope` replaces what the scope shares, and
+# `.override` on the builder or the command replaces the packages it
+# takes. A consumer that lists this flake in `projects` holds the overlay
+# as `cmake-purifier/default`, which its package sets apply by default.
 #
 # Both use the shared library of the nix-purifiers: the builder its
 # functions, and the command its source, which the command's own
@@ -16,24 +22,15 @@
   closure-inputs,
   ...
 }:
-let
-  packages = closure-lib.caisson.nixpkgs.mkPackagesOverlay ../../pkgs "cmake-purifier";
-in
 {
-  overlay =
-    final: prev:
-    let
-      base = packages final prev;
-    in
-    base
-    // {
-      cmake-purifier = base.cmake-purifier // {
-        cmake-purifier = base.cmake-purifier.cmake-purifier.override {
-          purifier = closure-inputs.purifier;
-        };
+  overlay = final: prev: {
+    cmake-purifier = final.lib.makeScope final.newScope (self: {
+      cmake-purifier = self.callPackage ../../pkgs/cmake-purifier {
+        purifier = closure-inputs.purifier;
       };
-      buildCMakeProject = final.callPackage ../../nix/lib/build-cmake-project.nix {
+      buildCMakeProject = self.callPackage ../../nix/lib/build-cmake-project.nix {
         inherit (closure-lib) purifier;
       };
-    };
+    });
+  };
 }

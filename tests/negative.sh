@@ -96,7 +96,7 @@ printf '%s\n' "\$@" > "$scratch/gh.args"
 EOF
 chmod +x "$scratch/bin/gh"
 release=$(nix build --no-link --print-out-paths --impure --expr \
-  "let flake = builtins.getFlake \"git+file://$root\"; pkgs = import flake.inputs.nixpkgs { system = \"$system\"; overlays = [ flake.overlays.default ]; }; in (pkgs.buildCMakeProject { src = $root/tests/fixtures/basic; }).release")
+  "let flake = builtins.getFlake \"git+file://$root\"; pkgs = import flake.inputs.nixpkgs { system = \"$system\"; overlays = [ flake.overlays.default ]; }; in (pkgs.cmake-purifier.buildCMakeProject { src = $root/tests/fixtures/basic; }).release")
 PATH=$scratch/bin:$PATH run cmake-purifier publish --repo nix-purifiers/example v1.2.3 "$release"
 grep -qx "$release/purifier-basic-1.2.3-$system.tar.gz" "$scratch/gh.args"
 grep -qx -- --clobber "$scratch/gh.args"

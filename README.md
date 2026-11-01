@@ -33,13 +33,14 @@ every build from the lockfile passes them first, since options such as
 build, which is the number of cores by default.
 
 Commit `cmake-purifier.lock.json`. The flake's `overlays.default` adds
-`buildCMakeProject` to a package set, where nixpkgs keeps its own
-builders, and a package takes it by name:
+one attribute to a package set, the scope `cmake-purifier`. The scope
+holds the builder `buildCMakeProject` and the command, and a package takes
+the scope by name:
 
 ```nix
 # package.nix
-{ buildCMakeProject, zlib }:
-buildCMakeProject {
+{ cmake-purifier, zlib }:
+cmake-purifier.buildCMakeProject {
   src = ./.;
   # Libraries that find_package() looks for come from nixpkgs as usual.
   buildInputs = [ zlib ];
@@ -89,7 +90,9 @@ The result has four attributes, each known at evaluation time:
 nixpkgs' CMake setup hook runs the build. `nix/lib/build-cmake-project.nix`
 documents the arguments of its own: `src`, `lockFile`, `cmakeFlags`
 (after the locked ones), and `fetchers`. It takes the packages it builds
-with by name, so `buildCMakeProject.override` replaces them. A lockfile kept
+with by name, so `cmake-purifier.buildCMakeProject.override` replaces
+them, and `pkgs.cmake-purifier.overrideScope` replaces what the scope
+shares. A lockfile kept
 outside `src`, as `lockFile`, is the one the build reads, so a packaging
 flake can lock a project it does not change. Every command takes it as
 `--lockfile <path>` or from the environment variable
@@ -265,7 +268,7 @@ besides the tools of its build. A `flake.nix` in a checkout of cpr:
       # curl's build writes its man pages when it finds Perl.
       nativeBuildInputs = [ pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
       buildInputs = [ pkgs.openssl ];
-      cpr = pkgs.buildCMakeProject {
+      cpr = pkgs.cmake-purifier.buildCMakeProject {
         inherit nativeBuildInputs buildInputs;
         src = ./.;
         # cpr's test suites each start a server on the same port.

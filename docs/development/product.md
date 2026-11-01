@@ -108,8 +108,8 @@ runs the lock.
   its initial cache, `git-shim.sh` and `vcs-shim.sh` serve its
   checkouts, `prefetch-vcs.nix` fetches a Mercurial, Subversion or CVS checkout for
   the hash the lock run records, and `build-cmake-project.nix` is
-  `buildCMakeProject`, which `pkg-overlays/default` adds to the package
-  set. `lib-overlays/default` publishes `lock.nix` as
+  `buildCMakeProject`, which `pkg-overlays/default` adds to the scope
+  `pkgs.cmake-purifier`. `lib-overlays/default` publishes `lock.nix` as
   `lib.cmake-purifier.readLock`. Every fetch goes through the shared library
   `purifier`, a flake input, whose `fetchEntry` and `tree` take the
   download entries of the lockfile.
