@@ -77,8 +77,10 @@ jobs:
           # Ubuntu's AppArmor stops unprivileged user namespaces, which
           # unshare needs for the namespace without a network.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          # The vcs fixture's repositories are built by a flake check.
-          nix build --no-link ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).vcs"
+          # The fetches of the vcs and cvs fixtures read their repositories
+          # from the store, where the flake checks `vcs` and `cvs` put them.
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          nix build --no-link ".#checks.$system.vcs" ".#checks.$system.cvs"
           CMAKE_PURIFIER_REQUIRE_OFFLINE=1 tests/offline.sh
       - name: Update a project whose branches moved
         if: matrix.job == 'conformance-update'

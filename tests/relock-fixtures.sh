@@ -22,12 +22,35 @@ lock() {
 lock -S "$root/tests/fixtures/basic"
 lock -S "$root/tests/fixtures/extras"
 
+# The vcs lockfile names the repositories by their store path, which is
+# the path of `vcs-repos` on x86_64-linux. On a system where `vcs-repos`
+# has another path, the fixture locks into a scratch lockfile, which must
+# equal the committed one once the path of this system is replaced by the
+# committed path. The contentHash is left out of the comparison, since it
+# covers the path.
 repos=$(nix build --no-link --print-out-paths "$root#checks.$system.vcs-repos")
+vcsLock=$root/tests/fixtures/vcs/cmake-purifier.lock.json
+committedRepos=$(grep -o '/nix/store/[a-z0-9]*-cmake-purifier-vcs-repos' "$vcsLock" | head -n 1)
+lockArgs=()
+if [ "$repos" != "$committedRepos" ]; then
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+  lockArgs=(--lockfile "$scratch/vcs.lock.json")
+fi
 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always \
-  lock -S "$root/tests/fixtures/vcs" \
+  lock -S "$root/tests/fixtures/vcs" ${lockArgs[@]+"${lockArgs[@]}"} \
   -DPURIFIER_SVN_URL="file://$repos/svn" \
   -DPURIFIER_HG_URL="file://$repos/hg" \
   -DPURIFIER_GIT_URL="file://$repos/git/super.git"
+if [ "$repos" != "$committedRepos" ]; then
+  normalize() {
+    nix shell 'nixpkgs#jq' -c jq -S 'del(.contentHash)' "$1" | sed "s|$repos|$committedRepos|g"
+  }
+  if ! diff <(normalize "$scratch/vcs.lock.json") <(normalize "$vcsLock"); then
+    echo "relock: the vcs fixture locks differently on $system" >&2
+    exit 1
+  fi
+fi
 
 # nixpkgs' cvs aborts on aarch64-linux, so the CVS fixture locks on
 # x86_64-linux only.
