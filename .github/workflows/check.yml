@@ -13,6 +13,9 @@
 #   which fails when the second build differs from the first.
 # - `conformance-offline` prefetches the fixtures and runs their everyday
 #   loop in a network namespace without a network (tests/offline.sh).
+# - `conformance-update` locks a project that follows two git branches,
+#   moves the branches, and checks that `lock` keeps the locked commits
+#   and `update` moves them (tests/update.sh).
 # - `commands` runs tests/negative.sh: the errors of the command, a
 #   lockfile kept outside the project, and `publish`.
 
@@ -36,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
-        job: [flake-check, conformance-relock, conformance-rebuild, conformance-offline, commands]
+        job: [flake-check, conformance-relock, conformance-rebuild, conformance-offline, conformance-update, commands]
     name: ${{ matrix.job }} (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -77,6 +80,9 @@ jobs:
           # The vcs fixture's repositories are built by a flake check.
           nix build --no-link ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).vcs"
           CMAKE_PURIFIER_REQUIRE_OFFLINE=1 tests/offline.sh
+      - name: Update a project whose branches moved
+        if: matrix.job == 'conformance-update'
+        run: tests/update.sh
       - name: Run the command tests
         if: matrix.job == 'commands'
         run: tests/negative.sh

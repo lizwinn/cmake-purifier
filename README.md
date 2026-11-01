@@ -122,6 +122,14 @@ To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
 and `cmake-purifier prefetch` again, and configure again. A relock takes
 about as long as a clean configure and build of the project.
 
+`lock` keeps what the lockfile already resolved. A checkout whose ref
+moves, such as a `GIT_TAG` that names a branch, a Subversion checkout at
+HEAD, or a CVS checkout without a tag, stays at its locked revision.
+`cmake-purifier update` moves such checkouts to where their refs point
+now, and relocks with the configure arguments of the lockfile.
+`cmake-purifier update <name>...` moves only the named FetchContent
+dependencies or repositories.
+
 ## Offline work
 
 `cmake-purifier prefetch` builds every download of the lockfile through

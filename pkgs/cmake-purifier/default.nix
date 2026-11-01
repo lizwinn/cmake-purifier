@@ -3,6 +3,7 @@
 # The `cmake-purifier` command.
 #
 #   cmake-purifier lock [--no-build] [-S <source dir>] [--lockfile <path>] [<cmake configure arguments>...]
+#   cmake-purifier update [-S <source dir>] [--lockfile <path>] [<dependency or repository>...]
 #   cmake-purifier prefetch [-S <source dir>] [--lockfile <path>]
 #   cmake-purifier replay [-S <source dir>] [--lockfile <path>] -- <command>...
 #   cmake-purifier publish [--lockfile <path>] [--repo <owner>/<name>] <tag> <installable>
@@ -26,6 +27,13 @@
 # outputs of the build without building it. `--no-build` stops after the
 # configure, and then the lockfile misses what the build itself downloads,
 # and records no outputs.
+#
+# `lock` keeps what the lockfile already resolved: a checkout whose ref
+# moves, such as a git branch, an svn checkout at HEAD or a CVS checkout
+# without a tag, stays at its locked revision (lock/pin.py). `update`
+# relocks with the configure arguments of the lockfile and moves those
+# checkouts to where their refs point now: every one, or those of the
+# named FetchContent dependencies and repositories.
 #
 # `prefetch` builds every locked download through Nix and keeps it with a
 # garbage-collector root, .cmake-purifier/sources-root. It
@@ -104,6 +112,7 @@ writeShellApplication {
     usage() {
       cat >&2 <<'EOF'
     usage: cmake-purifier lock [--no-build] [-S <source dir>] [--lockfile <path>] [<cmake configure arguments>...]
+           cmake-purifier update [-S <source dir>] [--lockfile <path>] [<dependency or repository>...]
            cmake-purifier prefetch [-S <source dir>] [--lockfile <path>]
            cmake-purifier replay [-S <source dir>] [--lockfile <path>] -- <command>...
            cmake-purifier publish [--lockfile <path>] [--repo <owner>/<name>] <tag> <installable>
@@ -127,6 +136,8 @@ writeShellApplication {
     lockfile=
     repo=
     noBuild=
+    updateNames=()
+    updateAll=
     args=()
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -193,7 +204,9 @@ writeShellApplication {
 
       # Writes $work/<tool>, a wrapper that logs each command with its
       # working directory to $work/<tool>.jsonl and runs <real> with the
-      # user's own network environment and any further arguments given.
+      # user's own network environment and any further arguments given,
+      # through lock/pin.py, which keeps the pinned checkouts at their
+      # locked revisions.
       make_logger() {
         local tool=$1 real=$2
         shift 2
@@ -210,15 +223,32 @@ writeShellApplication {
           # shellcheck disable=SC2016
           printf '%q -cn --arg cwd "$PWD" %q --args -- "$@" >> %q\n' \
             "$(command -v jq)" '{cwd: $cwd, args: $ARGS.positional}' "$work/$tool.jsonl"
-          printf 'exec %q' "$real"
+          printf 'exec %q -I %q %q %q %q %q' "$python" "$lockdir/pin.py" "$tool" "$work/pins.json" "$real" "$#"
           for extra in "$@"; do
             printf ' %q' "$extra"
           done
           # shellcheck disable=SC2016
-          printf ' "$@"\n'
+          printf ' -- "$@"\n'
         } > "$work/$tool"
         chmod +x "$work/$tool"
       }
+      # The pins: every locked checkout whose ref moves, from the lockfile
+      # as it is, without the ones `update` updates.
+      echo '[]' > "$work/pins.json"
+      if jq -e --argjson version "$lockVersion" '.version == $version' "$lockfile" > /dev/null 2>&1; then
+        jq --argjson updated "$(jq -n '$ARGS.positional' --args -- ''${updateNames[@]+"''${updateNames[@]}"})" \
+          --argjson all "''${updateAll:-false}" '
+          (.artifacts | map({ key: .path, value: . }) | from_entries) as $by
+          | ([.dependencies[] | select(.name as $n | $updated | index($n)) | .artifact]) as $named
+          | [
+              (.gitCheckouts[] | { tool: "git", repo: .url, ref, rev: $by[.artifact].git.rev, artifact }),
+              ((.hgCheckouts // [])[] | { tool: "hg", repo, ref, rev: $by[.artifact].hg.rev, artifact }),
+              ((.svnCheckouts // [])[] | { tool: "svn", repo, ref, rev: ($by[.artifact].svn.rev | tostring), artifact }),
+              ((.cvsCheckouts // [])[] | select(.ref == "") | { tool: "cvs", repo, ref, rev: $by[.artifact].cvs.date, artifact })
+            ]
+          | if $all then [] else map(select((.artifact as $a | $named | index($a)) or (.repo as $r | $updated | index($r)) | not)) end
+          ' "$lockfile" > "$work/pins.json"
+      fi
       make_logger git "$realGit"
       make_logger hg "$realHg"
       make_logger svn "$realSvn" ''${svnArgs[@]+"''${svnArgs[@]}"}
@@ -272,7 +302,7 @@ writeShellApplication {
       jq -n '$ARGS.positional' --args -- ''${args[@]+"''${args[@]}"} > "$work/flags.json"
       "$python" -I "$lockdir/assemble.py" "$work" "$lockVersion" "$lockfile" "$nixpkgs" \
         "$nixlib" "$purifierlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit" \
-        "$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")"
+        "$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")" "$work/pins.json"
       echo "cmake-purifier: locked in $((SECONDS - started)) seconds" >&2
     }
 
@@ -370,8 +400,29 @@ writeShellApplication {
       echo "cmake-purifier: uploaded ''${#files[@]} files to the release $tag" >&2
     }
 
+    # Relocks with the configure arguments of the lockfile, moving the
+    # checkouts of the named dependencies or repositories, or of every one.
+    update() {
+      [ -f "$lockfile" ] || die "$lockfile does not exist; run cmake-purifier lock first"
+      jq -e --argjson version "$lockVersion" '.version == $version' "$lockfile" > /dev/null 2>&1 ||
+        die "$lockfile is not a cmake-purifier lockfile of version $lockVersion; run cmake-purifier lock to write it again"
+      updateNames=(''${args[@]+"''${args[@]}"})
+      if [ ''${#updateNames[@]} -eq 0 ]; then
+        updateAll=true
+      fi
+      for name in ''${updateNames[@]+"''${updateNames[@]}"}; do
+        jq -e --arg name "$name" '
+          [.dependencies[].name, (.gitCheckouts[].url), ((.hgCheckouts // [])[].repo),
+           ((.svnCheckouts // [])[].repo), ((.cvsCheckouts // [])[].repo)] | index($name)' "$lockfile" > /dev/null ||
+          die "$lockfile has no dependency or repository named $name"
+      done
+      mapfile -t args < <(jq -r '.cmakeFlags[]' "$lockfile")
+      lock
+    }
+
     case "$command" in
       lock) lock ;;
+      update) update ;;
       prefetch) prefetch ;;
       replay) replay ;;
       publish) publish ;;

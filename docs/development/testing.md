@@ -73,7 +73,10 @@ the sandbox are CI jobs of the same name.
    on the fixtures, with the network. CI fails when a lockfile changes, so
    the lock run must reproduce the committed lockfiles byte for byte.
    **conformance-rebuild** is the CI job that builds fixtures again with
-   `nix build --rebuild`.
+   `nix build --rebuild`. **conformance-update** (`tests/update.sh`)
+   locks a project that follows two local git branches, one of them
+   shallow, moves both branches, and checks that `lock` keeps the locked
+   commits, `update <name>` moves one, and `update` moves both.
 
 CI (`.github/workflows/check.yml`) runs every layer on x86_64-linux and
 on GitHub's aarch64-linux runner.

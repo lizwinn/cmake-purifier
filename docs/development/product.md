@@ -43,6 +43,14 @@ scratch prefix with three recorders:
   `FetchContent_MakeAvailable()` dependency by name and where FetchContent
   put it.
 
+The wrappers run each command through `lock/pin.py`, with the pins of the
+existing lockfile: every checkout whose ref moves, at its locked
+revision. A git pin points the remote-tracking branch, and a local branch
+of the same name, at the locked commit after each clone and fetch, and
+fetches the commit when a shallow clone lacks it. An hg, svn or cvs pin
+adds the locked revision or date to the checkout and update commands.
+`cmake-purifier update` leaves out the pins of what it updates.
+
 A git checkout is hashed with `nix-prefetch-git`, the hash `fetchgit`
 checks. A Mercurial, Subversion or CVS checkout is hashed by building the
 nixpkgs fetcher of the sandbox build with a wrong hash and reading the

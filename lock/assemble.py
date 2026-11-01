@@ -58,7 +58,10 @@ from urls import https_of, url_path
     svn,
     prefetch,
     definition_hash,
+    pins_file,
 ) = sys.argv[1:]
+with open(pins_file) as f:
+    pins = json.load(f)
 prefetch_vcs = os.path.join(nixlib, "prefetch-vcs.nix")
 build_dir = os.path.join(work, "build")
 prefix = os.path.join(work, "prefix")
@@ -194,16 +197,18 @@ for checkout in svn_checkouts:
         "repo": checkout["url"], "ref": checkout["ref"], "artifact": artifact["path"],
     }
 
-# A CVS checkout without a tag or a date locks the time of the lock run.
+# A CVS checkout without a tag or a date locks the date its pin names,
+# which pin.py checked out, or else the time of the lock run.
 lock_time = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+cvs_pins = {p["repo"]: p["rev"] for p in pins if p["tool"] == "cvs"}
 cvs_table: dict[tuple, dict] = {}
 for checkout in cvs_checkouts:
     tag = checkout["tag"]
     date = checkout["date"]
-    if tag is None and date is None:
-        date = lock_time
     root = checkout["root"]
     module = checkout["module"]
+    if tag is None and date is None:
+        date = cvs_pins.get(f"{root} {module}", lock_time)
     artifact = vcs_artifact({
         "path": "/".join(["cvs", plain(root), plain(module), plain(tag or date)]),
         "cvs": {"cvsRoot": root, "module": module, "tag": tag, "date": date},

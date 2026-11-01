@@ -10,4 +10,5 @@ Every command runs from the repository root.
 | `nix flake check --all-systems --no-build` | Evaluates the checks of both systems. |
 | `tests/relock-fixtures.sh` | Relocks every fixture. Needs the network. |
 | `tests/offline.sh` | Prefetches the fixtures and runs their everyday loop offline. |
+| `tests/update.sh` | Checks that `lock` keeps moved branches and `update` moves them. |
 | `tests/negative.sh` | Runs the command tests: errors, `--lockfile` and `publish`. |
