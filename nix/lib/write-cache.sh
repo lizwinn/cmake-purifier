@@ -12,14 +12,17 @@
 # entry of `deps/` is copied into <copies dir> first. A copy is made again
 # only when its store path changes.
 #
-# The cache file sets FETCHCONTENT_SOURCE_DIR_<NAME> for every dependency,
-# where <NAME> is the FetchContent name in upper case, as FetchContent
-# spells it. FETCHCONTENT_FULLY_DISCONNECTED stops FetchContent from
+# The cache file sets CMAKE_PURIFIER_SOURCE_<NAME> to the copy of every
+# dependency, where <NAME> is the FetchContent name in upper case, as
+# FetchContent spells it, and the provider points
+# FETCHCONTENT_SOURCE_DIR_<NAME> at it. FETCHCONTENT_FULLY_DISCONNECTED stops FetchContent from
 # downloading those dependencies, and FETCHCONTENT_TRY_FIND_PACKAGE_MODE
 # NEVER makes every declared dependency come from its source, as in the
 # lock run. <provider> is cmake/CMakePurifierLocked.cmake, which the cache
 # names in CMAKE_PROJECT_TOP_LEVEL_INCLUDES; it stops a configure that
-# declares a dependency the lockfile does not hold.
+# declares a dependency the lockfile does not hold, or a dependency whose
+# declaration changed since the lock run, which it reads from
+# CMAKE_PURIFIER_DECLARED_<NAME>.
 #
 # Next to the cache file, the script writes `git`, a wrapper that runs
 # git-shim.sh of <nix lib dir> with the table of locked checkouts and the
@@ -102,9 +105,19 @@ for entry in "$tree"/deps/*; do
     echo "$store" > "$copy.source"
   fi
   upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
-  printf 'set(FETCHCONTENT_SOURCE_DIR_%s "%s" CACHE PATH "" FORCE)\n' "$upper" "$copy" >> "$cache.tmp"
+  # FetchContent calls no provider for a dependency whose
+  # FETCHCONTENT_SOURCE_DIR_<NAME> is set, so the provider gets the path
+  # and sets that variable itself, after its checks.
+  printf 'unset(FETCHCONTENT_SOURCE_DIR_%s CACHE)\n' "$upper" >> "$cache.tmp"
+  printf 'set(CMAKE_PURIFIER_SOURCE_%s "%s" CACHE INTERNAL "")\n' "$upper" "$copy" >> "$cache.tmp"
   locked="$locked${locked:+;}$name"
 done
 printf 'set(CMAKE_PURIFIER_LOCKED "%s" CACHE INTERNAL "")\n' "$locked" >> "$cache.tmp"
+if [ -f "$tree/declared.tsv" ]; then
+  while IFS=$'\t' read -r name declared; do
+    upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+    printf 'set(CMAKE_PURIFIER_DECLARED_%s [==[%s]==] CACHE INTERNAL "")\n' "$upper" "$declared" >> "$cache.tmp"
+  done < "$tree/declared.tsv"
+fi
 
 mv "$cache.tmp" "$cache"

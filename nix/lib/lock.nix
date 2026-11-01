@@ -35,7 +35,22 @@
 # artifacts. It is null when the lock run did not build.
 { lockFile }:
 let
-  lock = builtins.fromJSON (builtins.readFile lockFile);
+  hint = "Restore ${toString lockFile} from version control, or run `cmake-purifier lock` to write it again.";
+
+  lock = builtins.addErrorContext "while reading the cmake-purifier lockfile ${toString lockFile}. ${hint}" (
+    builtins.fromJSON (builtins.readFile lockFile)
+  );
+
+  required = [
+    "version"
+    "project"
+    "cmakeFlags"
+    "artifacts"
+    "dependencies"
+    "gitCheckouts"
+    "outputs"
+  ];
+  missing = builtins.filter (key: !(builtins.isAttrs lock && lock ? ${key})) required;
 
   supportedVersion = import ./lock-version.nix;
 
@@ -57,6 +72,9 @@ let
     in
     builtins.substring 0 200 nonEmpty;
 in
+assert
+  missing == [ ]
+  || throw "cmake-purifier: ${toString lockFile} is not a cmake-purifier lockfile: it has no ${builtins.concatStringsSep ", " missing}. ${hint}";
 assert
   lock.version == supportedVersion
   || throw "cmake-purifier: ${toString lockFile} has lock format version ${toString lock.version}; this library reads version ${toString supportedVersion}. Run `cmake-purifier lock` with the cmake-purifier version that provides this library.";

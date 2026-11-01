@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: MIT
 #
 # The interactive test: `cmake-purifier configure` and `cmake-purifier
-# build` on both fixtures, outside the sandbox. The programs must build
-# and run, and the basic fixture's tests must pass. Run it with the hosts
+# build` on the fixtures, outside the sandbox. The programs must build and
+# run, the basic fixture's tests must pass, and clangd must work on the
+# basic fixture's offline build directory. Run it with the hosts
 # of the fixtures' downloads unreachable, to show that nothing outside the
 # lockfile is downloaded; on a machine with the network, the check below
 # still shows that FetchContent populated none of basic's dependencies
@@ -20,7 +21,15 @@ run() {
 }
 
 basic=$scratch/basic
-run cmake-purifier configure -S "$root/tests/fixtures/basic" -B "$basic"
+run cmake-purifier configure -S "$root/tests/fixtures/basic" -B "$basic" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+# The editor: clangd reads the build directory's compile_commands.json and
+# finds the headers of fmt and argparse in the locked sources, offline.
+nix shell 'nixpkgs#clang-tools' -c clangd --check="$root/tests/fixtures/basic/main.cpp" \
+  --compile-commands-dir="$basic" > "$scratch/clangd.log" 2>&1 || {
+  echo "clangd failed on the offline build directory:" >&2
+  cat "$scratch/clangd.log" >&2
+  exit 1
+}
 run cmake-purifier build -B "$basic" -j4
 [ "$("$basic/greet" --name interactive)" = "Hello, interactive!" ]
 run ctest --test-dir "$basic" --output-on-failure

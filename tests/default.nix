@@ -33,6 +33,17 @@ let
     inherit (vcsRepos) vcsFetchers fetchgit;
   };
 
+  # The fixture with fmt at another version, built from the lockfile of
+  # the old one.
+  upgraded = withOverlay.buildCMakeProject {
+    src = pkgs.runCommand "basic-upgraded" { } ''
+      cp -r ${./fixtures/basic} $out
+      chmod -R u+w $out
+      substituteInPlace $out/CMakeLists.txt --replace-fail 11.1.4/fmt-11.1.4.zip 11.2.0/fmt-11.2.0.zip
+    '';
+    lockFile = ./fixtures/basic/cmake-purifier.lock.json;
+  };
+
   # The fixture with one more download, built from the fixture's lockfile,
   # which does not hold it.
   unlocked = withOverlay.buildCMakeProject {
@@ -126,6 +137,44 @@ in
     ${pkgs.python3}/bin/python3 -I ${../lock/test_urls.py} ${../lock}
     touch $out
   '';
+
+  # The reading of the lock run's records (lock/records.py), on sample
+  # records of each kind.
+  lock-records = pkgs.runCommand "lock-records" { } ''
+    ${pkgs.python3}/bin/python3 -I ${../lock/test_records.py} ${../lock}
+    touch $out
+  '';
+
+  # The copy of each fixture that a build gets hashes to the definition
+  # hash its lockfile recorded, so a build warns only when the definition
+  # changed; after an edit to a CMakeLists.txt, it hashes differently.
+  definition-hash = pkgs.runCommand "definition-hash" { } ''
+    for fixture in basic extras vcs; do
+      case $fixture in
+        basic) src=${./fixtures/basic} ;;
+        extras) src=${./fixtures/extras} ;;
+        vcs) src=${./fixtures/vcs} ;;
+      esac
+      locked=$(${pkgs.jq}/bin/jq -r .definitionHash $src/cmake-purifier.lock.json)
+      [ "$(bash ${../nix/lib/definition-hash.sh} $src)" = "$locked" ] ||
+        { echo "$fixture hashes differently from its lockfile" >&2; exit 1; }
+    done
+    cp -r ${./fixtures/basic} edited
+    chmod -R u+w edited
+    echo '# an edit' >> edited/lib/CMakeLists.txt
+    [ "$(bash ${../nix/lib/definition-hash.sh} edited)" != "$(${pkgs.jq}/bin/jq -r .definitionHash edited/cmake-purifier.lock.json)" ]
+    touch $out
+  '';
+
+  # A dependency whose declaration changed since the lock run, such as a
+  # new version, stops the configure with the hint to relock.
+  declaration-changed-fails =
+    pkgs.runCommand "declaration-changed-fails" { failed = pkgs.testers.testBuildFailure upgraded; }
+      ''
+        grep -q "cmake-purifier: the dependency fmt now declares the download" $failed/testBuildFailure.log
+        grep -q 'warning: a CMakeLists.txt or \*.cmake file changed' $failed/testBuildFailure.log
+        touch $out
+      '';
 
   # A download the lockfile does not hold stops the configure with the
   # hint to relock.

@@ -68,8 +68,8 @@ writeShellApplication {
   };
   text = ''
     lockVersion=${toString (import ../../nix/lib/lock-version.nix)}
-    provider=${../../cmake/CMakePurifierLock.cmake}
-    lockedProvider=${../../cmake/CMakePurifierLocked.cmake}
+    provider=${../../cmake}/CMakePurifierLock.cmake
+    lockedProvider=${../../cmake}/CMakePurifierLocked.cmake
     nixlib=${../../nix/lib}
     lockdir=${../../lock}
     nixpkgs=${pkgs.path}
@@ -140,6 +140,7 @@ writeShellApplication {
     lock() {
       [ -z "$build" ] || die "lock takes no -B; it configures in a scratch directory"
       [ -f "$source/CMakeLists.txt" ] || die "$source has no CMakeLists.txt"
+      started=$SECONDS
       work=$(mktemp -d)
       trap 'kill "''${recorder:-}" 2>/dev/null || true; chmod -R u+w "$work" 2>/dev/null || true; rm -rf "$work"' EXIT
 
@@ -231,7 +232,8 @@ writeShellApplication {
           ''${args[@]+"''${args[@]}"} >&2
         if [ -z "$noBuild" ]; then
           echo "cmake-purifier: building $source to record what the build downloads" >&2
-          cmake --build "$work/build" --parallel >&2
+          # A bare --parallel lets make start any number of jobs.
+          cmake --build "$work/build" --parallel "''${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}" >&2
           echo "cmake-purifier: installing $source to record its outputs" >&2
           cmake --install "$work/build" --prefix "$work/prefix" >&2
         fi
@@ -243,14 +245,23 @@ writeShellApplication {
 
       jq -n '$ARGS.positional' --args -- ''${args[@]+"''${args[@]}"} > "$work/flags.json"
       "$python" -I "$lockdir/assemble.py" "$work" "$lockVersion" "$lockfile" "$nixpkgs" \
-        "$nixlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit"
+        "$nixlib" "$realGit" "$realHg" "$realSvn" "$prefetchGit" \
+        "$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")"
+      echo "cmake-purifier: locked in $((SECONDS - started)) seconds" >&2
     }
 
     # Builds the locked downloads and writes the initial cache of <build dir>.
     prepare() {
       [ -f "$lockfile" ] || die "$lockfile does not exist; run cmake-purifier lock first"
+      jq -e 'type == "object"' "$lockfile" > /dev/null 2>&1 ||
+        die "$lockfile is not valid JSON; restore it from version control, or run cmake-purifier lock to write it again"
       format=$(jq .version "$lockfile")
       [ "$format" = "$lockVersion" ] || die "$lockfile has lock format version $format; this cmake-purifier reads version $lockVersion. Run cmake-purifier lock again."
+      locked=$(jq -r '.definitionHash // ""' "$lockfile")
+      current=$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")
+      if [ -n "$locked" ] && [ "$locked" != "$current" ]; then
+        echo "cmake-purifier: warning: a CMakeLists.txt or *.cmake file changed since $lockfile was written. If the build now downloads something new, it fails; run cmake-purifier lock to lock it." >&2
+      fi
       mkdir -p "$build/cmake-purifier"
       build=$(realpath "$build")
       tree=$(nix-build --expr \

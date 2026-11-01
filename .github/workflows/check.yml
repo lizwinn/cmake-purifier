@@ -3,9 +3,9 @@
 # The checks of every push and pull request.
 #
 # - `x86_64-linux` builds every flake check, evaluates the checks of both
-#   systems, and runs the interactive test. It then relocks both fixtures
-#   with the network and fails when a lockfile changes: the lock run must
-#   reproduce the committed lockfiles.
+#   systems, and runs the interactive and the negative tests. It then
+#   relocks the fixtures with the network and fails when a lockfile
+#   changes: the lock run must reproduce the committed lockfiles.
 # - `aarch64-linux` builds every flake check on GitHub's arm runner.
 
 name: check
@@ -42,6 +42,8 @@ jobs:
         run: nix flake check --all-systems --no-build
       - name: Run the interactive test
         run: tests/interactive.sh
+      - name: Run the negative tests
+        run: tests/negative.sh
       - name: Relock the fixtures and compare
         run: |
           tests/relock-fixtures.sh

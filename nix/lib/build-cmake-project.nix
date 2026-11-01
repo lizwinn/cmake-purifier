@@ -108,8 +108,13 @@ stdenv.mkDerivation (
     mitmCache = "${sources.tree}/http";
     cmakeFlags = lock.cmakeFlags ++ cmakeFlags;
     preConfigure = ''
+      ${lib.optionalString ((lock.definitionHash or "") != "") ''
+        if [ "$(bash ${./definition-hash.sh} .)" != ${lib.escapeShellArg lock.definitionHash} ]; then
+          echo "cmake-purifier: warning: a CMakeLists.txt or *.cmake file changed since the lockfile was written. If the build now downloads something new, it fails; run \`cmake-purifier lock\` to lock it." >&2
+        fi
+      ''}
       bash ${./write-cache.sh} ${sources.tree} "$NIX_BUILD_TOP/cmake-purifier/sources" "$NIX_BUILD_TOP/cmake-purifier/cache.cmake" \
-        ${../../cmake/CMakePurifierLocked.cmake} ${./.} ${git}/bin/git \
+        ${../../cmake}/CMakePurifierLocked.cmake ${./.} ${git}/bin/git \
         "${realTool "hg" mercurial "hg"}" "${
           realTool "svn" subversion "svn"
         }" "${realTool "cvs" cvs "cvs"}"

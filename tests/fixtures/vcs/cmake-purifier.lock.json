@@ -4,6 +4,7 @@
     "name": "purifier-vcs",
     "version": "0.1.0"
   },
+  "definitionHash": "70371d61ccdfa324f09d469b520348f34b5e7987d32982269772958241ec1d15",
   "cmakeFlags": [
     "-DPURIFIER_SVN_URL=file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn",
     "-DPURIFIER_HG_URL=file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg",
@@ -58,11 +59,13 @@
       "artifact": "git/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git/d3e733b4f78cd8800d0b52e49589198f0eb3e90a",
       "submodules": [
         "sub-a"
-      ]
+      ],
+      "declared": "git file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git v1"
     },
     {
       "name": "svnlib",
-      "artifact": "svn/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk/1"
+      "artifact": "svn/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk/1",
+      "declared": "svn file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk -r1"
     }
   ],
   "gitCheckouts": [

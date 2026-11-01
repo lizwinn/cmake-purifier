@@ -23,15 +23,22 @@ beyond the lockfile.
 
 ## Use
 
-Lock the project, from its source directory:
+Lock the project, from its source directory, in a shell with the
+command, CMake and a C and C++ compiler:
 
 ```zsh
-nix run github:nix-purifiers/cmake-purifier -- lock
+nix develop github:nix-purifiers/cmake-purifier
+cmake-purifier lock
 ```
 
 The lock run needs the network and the compilers and libraries the build
 needs, because it runs a real configure, build and install, in a scratch
-directory. Arguments after `lock` go to the configure, and the lockfile
+directory. A project that needs more than the shell above, such as
+OpenSSL for `find_package(OpenSSL)`, locks in its own development shell
+with `cmake-purifier` added to its packages:
+`cmake-purifier.packages.${system}.default`. `CMAKE_BUILD_PARALLEL_LEVEL`
+sets the number of jobs of the lock run's build, which is the number of
+cores by default. Arguments after `lock` go to the configure, and the lockfile
 keeps them: every build of the lockfile passes them first, since options
 such as `-DBUILD_TESTING=ON` decide what a build downloads and installs.
 
@@ -89,7 +96,39 @@ nix run github:nix-purifiers/cmake-purifier -- build -B build
 `configure` builds the locked downloads through Nix and keeps a GC root to
 them in `build/cmake-purifier`. `build` runs `cmake --build`. A plain
 `cmake --build build` works too, unless the build itself downloads files,
-as `ExternalProject_Add()` with a URL does.
+as `ExternalProject_Add()` with a URL does. `ctest --test-dir build` runs
+the tests as usual.
+
+For an editor, configure with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. clangd
+and other tools that read `build/compile_commands.json` then find every
+dependency's headers in the build directory, offline.
+
+To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
+`ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
+again, and configure again. A relock takes about as long as a clean
+configure and build of the project.
+
+### When something is out of step
+
+Each of these stops the configure, or warns, with a message that names
+the problem and the command to run:
+
+- **A dependency that the lockfile does not hold**, for example a new
+  `FetchContent_Declare()`, a new ExternalProject repository or ref, or a
+  new git clone: "the build declares the dependency …, which the lockfile
+  does not hold. Run `cmake-purifier lock`".
+- **A dependency whose declaration changed**, for example a new version
+  of its URL or tag: "the dependency … now declares the download …, but
+  the lockfile holds …. Run `cmake-purifier lock`".
+- **A build definition newer than the lockfile.** The lockfile records a
+  hash of every `CMakeLists.txt` and `*.cmake` file, and a build warns when
+  it differs. The build still runs, and fails only if it downloads
+  something new.
+- **A lockfile that is not valid JSON, or not a cmake-purifier lockfile**:
+  the message names the file, and says to restore it from version control
+  or run `cmake-purifier lock`.
+- **A lockfile whose hash of a download was edited**: Nix stops the fetch
+  with a hash mismatch that names the download.
 
 ## How it works
 

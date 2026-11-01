@@ -26,11 +26,23 @@
   };
 
   # `nix run github:nix-purifiers/cmake-purifier -- lock` locks the build in
-  # the current directory.
+  # the current directory. `nix develop github:nix-purifiers/cmake-purifier`
+  # gives a shell with the command, CMake, Ninja, make, the C and C++
+  # compilers of stdenv, and clangd, which is enough to lock, configure and
+  # edit a project whose other dependencies come from FetchContent.
   perSystem =
-    { config, ... }:
+    { config, pkgs, ... }:
     {
       packages.default = config.packages.cmake-purifier;
+      devShells.default = pkgs.mkShell {
+        packages = [
+          config.packages.cmake-purifier
+          pkgs.cmake
+          pkgs.ninja
+          pkgs.gnumake
+          pkgs.clang-tools
+        ];
+      };
     };
 
   partitionedAttrs.checks = "checks";

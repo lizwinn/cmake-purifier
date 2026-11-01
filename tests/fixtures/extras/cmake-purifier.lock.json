@@ -4,6 +4,7 @@
     "name": "purifier-extras",
     "version": "0.1.0"
   },
+  "definitionHash": "e316501cfbbd19c5b92de4f0090f70cd3cc29144f5dc1c6842538c4375343586",
   "cmakeFlags": [],
   "artifacts": [
     {
@@ -61,7 +62,8 @@
   "dependencies": [
     {
       "name": "argparse",
-      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910"
+      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
+      "declared": "git https://github.com/p-ranav/argparse.git v3.2"
     }
   ],
   "gitCheckouts": [

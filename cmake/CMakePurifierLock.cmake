@@ -17,6 +17,7 @@
 
 include_guard(GLOBAL)
 include(FetchContent)
+include("${CMAKE_CURRENT_LIST_DIR}/CMakePurifierDeclared.cmake")
 
 if(NOT CMAKE_PURIFIER_OBSERVED)
   message(FATAL_ERROR "cmake-purifier: CMAKE_PURIFIER_OBSERVED names no file; run the lock through `cmake-purifier lock`")
@@ -73,6 +74,8 @@ function(_cmake_purifier_provide method name)
   set_property(GLOBAL PROPERTY "CMAKE_PURIFIER_${name}_URLS" "${arg_URL}")
   set_property(GLOBAL PROPERTY "CMAKE_PURIFIER_${name}_EXTRACT" "${extract}")
   set_property(GLOBAL PROPERTY "CMAKE_PURIFIER_${name}_SUBMODULES" "${submodules}")
+  _cmake_purifier_declared(declared ${ARGN})
+  set_property(GLOBAL PROPERTY "CMAKE_PURIFIER_${name}_DECLARED" "${declared}")
 endfunction()
 
 # A JSON string literal of a CMake string.
@@ -117,7 +120,9 @@ function(_cmake_purifier_write)
     else()
       _cmake_purifier_json_list(json_submodules "${submodules}")
     endif()
-    set(entry "{\"name\":${json_name},\"type\":\"${type}\",\"url\":${json_url},\"urls\":${json_urls},\"submodulePaths\":${json_submodules},\"sourceDir\":${json_source_dir},\"extract\":${extract}}")
+    get_property(declared GLOBAL PROPERTY "CMAKE_PURIFIER_${name}_DECLARED")
+    _cmake_purifier_json_string(json_declared "${declared}")
+    set(entry "{\"name\":${json_name},\"type\":\"${type}\",\"url\":${json_url},\"urls\":${json_urls},\"submodulePaths\":${json_submodules},\"sourceDir\":${json_source_dir},\"extract\":${extract},\"declared\":${json_declared}}")
     string(JSON entries SET "${entries}" ${index} "${entry}")
     math(EXPR index "${index} + 1")
   endforeach()

@@ -9,6 +9,8 @@
 #
 # - `deps/<name>`: the source tree of each FetchContent dependency, as
 #   FetchContent would have populated it. `byName` maps each name to it.
+# - `declared.tsv`: a line per FetchContent dependency with its name and
+#   the download its declaration named in the lock run.
 # - `git-checkouts.tsv`: a line per git checkout the build makes, with the
 #   repository URL, the ref the build asked for, the commit and the store
 #   path of the checkout, for git-shim.sh.
@@ -117,6 +119,7 @@ in
     runCommand "cmake-purifier-sources"
       {
         deps = lib.concatStrings (lib.mapAttrsToList (name: path: "${name}\t${path}\n") byName);
+        declared = lib.concatMapStrings (dep: "${dep.name}\t${dep.declared or ""}\n") lock.dependencies;
         http = lib.concatMapStrings (a: "${a.path}\t${fetched.${a.path}}\n") files;
         checkouts = lib.concatMapStrings (
           c:
@@ -130,6 +133,7 @@ in
         cvs = checkoutTable "cvs";
         passAsFile = [
           "deps"
+          "declared"
           "http"
           "checkouts"
           "hg"
@@ -148,6 +152,7 @@ in
           mkdir -p "$out/http/$(dirname "$rel")"
           ln -s "$target" "$out/http/$rel"
         done < "$httpPath"
+        cp "$declaredPath" $out/declared.tsv
         cp "$checkoutsPath" $out/git-checkouts.tsv
         cp "$hgPath" $out/hg-checkouts.tsv
         cp "$svnPath" $out/svn-checkouts.tsv

@@ -1,6 +1,6 @@
 # Testing
 
-The tests come in three layers.
+The tests come in four layers.
 
 1. **Flake checks** (`tests/default.nix`) run in the sandbox under
    `nix flake check`:
@@ -26,7 +26,15 @@ The tests come in three layers.
      fetchers get the repositories as inputs through `vcsFetchers` and
      `fetchgit`.
    - `lock-urls` checks the URL rules of the lock run (`lock/urls.py`),
-     the mapping of SSH URLs to HTTPS ones included.
+     the mapping of SSH URLs to HTTPS ones included, and `lock-records`
+     the reading of its records (`lock/records.py`) on sample records of
+     each kind: redirects, query clashes, and the clone, checkout and
+     update commands of git, hg, svn and cvs.
+   - `definition-hash` checks that each fixture, as a build gets it,
+     hashes to the definition hash its lockfile recorded, and differently
+     after an edit.
+   - `declaration-changed-fails` builds the basic fixture with fmt at a new
+     version and the old lockfile, and checks for the hint to relock.
    - `basic-runs`, `extras-runs` and `vcs-runs` run the installed
      programs, and
      `basic-name` checks that the package name and version come from the
@@ -51,11 +59,16 @@ The tests come in three layers.
    fixtures' downloads unreachable, to show that the builds download
    nothing, and after the flake checks, which fetch the vcs fixture's
    checkouts.
-3. **The relock** (`tests/relock-fixtures.sh`) runs the lock run on the
+3. **The negative tests** (`tests/negative.sh`) run outside the sandbox,
+   on copies of the basic fixture: a lockfile that is not valid JSON, a
+   lockfile with an edited hash, a lockfile older than the build
+   definition, a dependency the lockfile does not hold, and a dependency
+   whose version changed. Each must stop, or warn, with its message.
+4. **The relock** (`tests/relock-fixtures.sh`) runs the lock run on the
    fixtures, with the network, and on the vcs fixture against the
    repositories of `vcs-repos`. CI runs it and fails when a lockfile
    changes, so the lock run must reproduce the committed lockfiles.
 
-CI (`.github/workflows/check.yml`) runs all three layers on x86_64-linux,
+CI (`.github/workflows/check.yml`) runs all four layers on x86_64-linux,
 evaluates the checks of aarch64-linux there, and builds the flake checks
 on an aarch64-linux runner.

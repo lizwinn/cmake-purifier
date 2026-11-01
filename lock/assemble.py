@@ -3,9 +3,11 @@
 # Writes the lockfile from what the lock run recorded.
 #
 #   python3 -I assemble.py <work dir> <lock version> <lockfile> <nixpkgs>
-#     <nix lib dir> <git> <hg> <svn> <nix-prefetch-git>
+#     <nix lib dir> <git> <hg> <svn> <nix-prefetch-git> <definition hash>
 #
 # <nix lib dir> is this project's nix/lib, which holds prefetch-vcs.nix.
+# <definition hash> is the hash of the build definition, which
+# nix/lib/definition-hash.sh computes.
 #
 # <work dir> is the lock run's scratch directory, which holds:
 #
@@ -18,13 +20,10 @@
 # - flags.json, the configure arguments.
 # - build/ and prefix/, the build directory and the install.
 #
-# Every successful GET the build made becomes a file artifact, under the
-# URL the build asked for: a redirect counts as the file it leads to, and
-# the URL it leads to is left out, since such targets are often signed
-# URLs that expire. Every git clone becomes a checkout artifact at the
-# commit the build checked out, hashed with nix-prefetch-git. Every
-# Mercurial, Subversion and CVS checkout becomes an artifact too, hashed by
-# building the fetcher of the sandbox build (nix/lib/prefetch-vcs.nix).
+# records.py reads the records. This script adds what needs the checkouts
+# or the network: every git checkout is hashed with nix-prefetch-git, and
+# every Mercurial, Subversion and CVS checkout by building the fetcher of
+# the sandbox build (nix/lib/prefetch-vcs.nix).
 #
 # The outputs come from the install into prefix/: `files` is every file
 # the install wrote (install_manifest.txt in build/), relative to prefix/.
@@ -38,14 +37,25 @@ import os
 import re
 import subprocess
 import sys
-import urllib.parse
 from typing import NoReturn
 
 # python3 -I leaves the script's own directory out of the module path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import records
 from urls import https_of, url_path
 
-(work, lock_version, lockfile, nixpkgs, nixlib, git, hg, svn, prefetch) = sys.argv[1:]
+(
+    work,
+    lock_version,
+    lockfile,
+    nixpkgs,
+    nixlib,
+    git,
+    hg,
+    svn,
+    prefetch,
+    definition_hash,
+) = sys.argv[1:]
 prefetch_vcs = os.path.join(nixlib, "prefetch-vcs.nix")
 build_dir = os.path.join(work, "build")
 prefix = os.path.join(work, "prefix")
@@ -78,66 +88,14 @@ with open(os.path.join(work, "observed.json")) as f:
 with open(os.path.join(work, "flags.json")) as f:
     flags = json.load(f)
 
-# File downloads.
-responses = {}
-targets = set()
-for entry in read_lines("http.jsonl"):
-    if entry["method"] != "GET":
-        continue
-    responses[entry["url"]] = entry
-    if "location" in entry:
-        targets.add(urllib.parse.urljoin(entry["url"], entry["location"]))
-
-
-def final_hash(url):
-    seen = set()
-    while url in responses and url not in seen:
-        seen.add(url)
-        entry = responses[url]
-        if "hash" in entry:
-            return entry["hash"]
-        if "location" not in entry:
-            return None
-        url = urllib.parse.urljoin(url, entry["location"])
-    return None
-
-
-files: dict[str, dict] = {}
-paths: dict[str, str] = {}
-for url in responses:
-    if url in targets:
-        continue
-    file_hash = final_hash(url)
-    if file_hash is None:
-        continue
-    path = url_path(url)
-    if path in paths and paths[path] != url:
-        fail(f"{paths[path]} and {url} differ only in their query, which the replay cannot tell apart")
-    paths[path] = url
-    files[url] = {"path": path, "url": url, "mirrors": [], "hash": file_hash}
-
-
-def command(entry, with_value):
-    """The working directory and the arguments after the global options,
-    given the global options that take a value."""
-    cwd = entry["cwd"]
-    args = entry["args"]
-    options = {}
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "-C" and "-C" in with_value:
-            cwd = os.path.join(cwd, args[i + 1])
-            i += 2
-        elif arg in with_value:
-            options[arg] = args[i + 1]
-            i += 2
-        elif arg.startswith("-"):
-            i += 1
-        else:
-            break
-    return os.path.normpath(cwd), args[i:], options
-
+try:
+    files = records.file_artifacts(read_lines("http.jsonl"))
+    git_clones = records.git_clones(read_lines("git.jsonl"))
+    hg_clones = records.hg_clones(read_lines("hg.jsonl"))
+    svn_checkouts = records.svn_checkouts(read_lines("svn.jsonl"))
+    cvs_checkouts = records.cvs_checkouts(read_lines("cvs.jsonl"), os.environ.get("CVSROOT", ""))
+except records.RecordError as error:
+    fail(str(error))
 
 artifacts: dict[str, dict] = {}
 by_dir: dict[str, dict] = {}
@@ -167,24 +125,7 @@ def vcs_artifact(artifact):
     return artifact
 
 
-# Git checkouts.
-git_clones: dict[str, dict] = {}
-for entry in read_lines("git.jsonl"):
-    cwd, args, _ = command(entry, {"-C", "-c"})
-    if not args:
-        continue
-    if args[0] == "clone" and len(args) >= 3:
-        url, dest = args[-2], args[-1]
-        directory = os.path.normpath(os.path.join(cwd, dest))
-        git_clones[directory] = {"url": url, "ref": None, "submodules": False}
-    elif cwd in git_clones and args[0] == "checkout":
-        refs = [a for a in args[1:] if not a.startswith("-")]
-        if refs:
-            git_clones[cwd]["ref"] = refs[0]
-    elif cwd in git_clones and args[0] == "submodule" and "update" in args:
-        git_clones[cwd]["submodules"] = True
-
-git_checkouts: dict[tuple, dict] = {}
+git_table: dict[tuple, dict] = {}
 for directory, clone in git_clones.items():
     if not os.path.isdir(directory):
         fail(f"the lock run cloned {clone['url']} into {directory}, which no longer exists")
@@ -195,6 +136,7 @@ for directory, clone in git_clones.items():
     fetch_urls = [u for u in [https_of(clone["url"]), clone["url"]] if u]
     path = "/".join(["git", url_path(fetch_urls[0]), rev])
     if path not in artifacts:
+        result = None
         for fetch_url in fetch_urls:
             print(f"cmake-purifier: hashing {fetch_url} at {rev}", file=sys.stderr)
             command_line = [prefetch, "--quiet", "--url", fetch_url, "--rev", rev]
@@ -203,8 +145,8 @@ for directory, clone in git_clones.items():
             result = subprocess.run(command_line, capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 break
-        else:
-            fail(f"could not fetch {clone['url']} at {rev}:\n{result.stderr}")
+        if result is None or result.returncode != 0:
+            fail(f"could not fetch {clone['url']} at {rev}:\n{result.stderr if result else ''}")
         artifacts[path] = {
             "path": path,
             # The shim answers every command a build makes on a checkout,
@@ -220,24 +162,9 @@ for directory, clone in git_clones.items():
         }
     by_dir[directory] = artifacts[path]
     ref = clone["ref"] or rev
-    git_checkouts[(clone["url"], ref)] = {"url": clone["url"], "ref": ref, "artifact": path}
+    git_table[(clone["url"], ref)] = {"url": clone["url"], "ref": ref, "artifact": path}
 
-# Mercurial checkouts: `hg clone -U <url> <dir>`, then `hg update <tag>`.
-hg_clones: dict[str, dict] = {}
-for entry in read_lines("hg.jsonl"):
-    cwd, args, _ = command(entry, {"--cwd", "-R", "--repository", "--config"})
-    if not args:
-        continue
-    if args[0] == "clone":
-        positional = [a for a in args[1:] if not a.startswith("-")]
-        if len(positional) >= 2:
-            directory = os.path.normpath(os.path.join(cwd, positional[1]))
-            hg_clones[directory] = {"url": positional[0], "ref": ""}
-    elif cwd in hg_clones and args[0] in ("update", "up"):
-        refs = [a for a in args[1:] if not a.startswith("-")]
-        hg_clones[cwd]["ref"] = refs[0] if refs else ""
-
-hg_checkouts: dict[tuple, dict] = {}
+hg_table: dict[tuple, dict] = {}
 for directory, clone in hg_clones.items():
     node = run(hg, "--cwd", directory, "log", "-r", ".", "-T", "{node}")
     subrepos = os.path.exists(os.path.join(directory, ".hgsub"))
@@ -246,91 +173,40 @@ for directory, clone in hg_clones.items():
         "hg": {"url": clone["url"], "rev": node, "subrepos": subrepos},
     })
     by_dir[directory] = artifact
-    hg_checkouts[(clone["url"], clone["ref"])] = {
+    hg_table[(clone["url"], clone["ref"])] = {
         "repo": clone["url"], "ref": clone["ref"], "artifact": artifact["path"],
     }
 
-# Subversion checkouts: `svn co <url> [-r<rev>] ... <dir>`.
-svn_checkouts: dict[tuple, dict] = {}
-for entry in read_lines("svn.jsonl"):
-    cwd = os.path.normpath(entry["cwd"])
-    args = entry["args"]
-    if not args or args[0] not in ("co", "checkout"):
-        continue
-    positional = []
-    ref = ""
-    i = 1
-    while i < len(args):
-        if args[i] == "-r":
-            ref = args[i + 1]
-            i += 2
-        elif args[i].startswith("-r"):
-            ref = args[i][2:]
-            i += 1
-        elif args[i].startswith("-"):
-            i += 1
-        else:
-            positional.append(args[i])
-            i += 1
-    url = positional[0]
-    directory = os.path.normpath(os.path.join(cwd, positional[-1]))
-    rev = int(run(svn, "info", "--show-item", "revision", directory))
+svn_table: dict[tuple, dict] = {}
+for checkout in svn_checkouts:
+    rev = int(run(svn, "info", "--show-item", "revision", checkout["dir"]))
     artifact = vcs_artifact({
-        "path": "/".join(["svn", url_path(url), str(rev)]),
+        "path": "/".join(["svn", url_path(checkout["url"]), str(rev)]),
         # ExternalProject's `svn co` fetches externals and expands keywords.
-        "svn": {"url": url, "rev": rev, "ignoreExternals": False, "ignoreKeywords": False},
+        "svn": {"url": checkout["url"], "rev": rev, "ignoreExternals": False, "ignoreKeywords": False},
     })
-    by_dir[directory] = artifact
-    svn_checkouts[(url, ref)] = {"repo": url, "ref": ref, "artifact": artifact["path"]}
+    by_dir[checkout["dir"]] = artifact
+    svn_table[(checkout["url"], checkout["ref"])] = {
+        "repo": checkout["url"], "ref": checkout["ref"], "artifact": artifact["path"],
+    }
 
-# CVS checkouts: `cvs -d <root> co [-r<tag> | -D<date>] -d <dir> <module>`.
-# A checkout without a tag or a date locks the time of the lock run.
+# A CVS checkout without a tag or a date locks the time of the lock run.
 lock_time = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-cvs_checkouts: dict[tuple, dict] = {}
-for entry in read_lines("cvs.jsonl"):
-    cwd, args, options = command(entry, {"-d", "-z", "-s", "-T", "-e"})
-    if not args or args[0] not in ("co", "checkout"):
-        continue
-    root = options.get("-d", os.environ.get("CVSROOT", ""))
-    ref = ""
-    tag = None
-    date = None
-    directory = ""
-    module = None
-    i = 1
-    while i < len(args):
-        arg = args[i]
-        if arg in ("-r", "-D", "-d"):
-            value = args[i + 1]
-            i += 2
-        elif arg[:2] in ("-r", "-D", "-d") and len(arg) > 2:
-            arg, value = arg[:2], arg[2:]
-            i += 1
-        elif arg.startswith("-"):
-            i += 1
-            continue
-        else:
-            module = arg
-            i += 1
-            continue
-        if arg == "-r":
-            tag, ref = value, f"r:{value}"
-        elif arg == "-D":
-            date, ref = value, f"D:{value}"
-        else:
-            directory = value
-    if module is None:
-        fail(f"the lock run made a cvs checkout without a module: {args}")
-    directory = os.path.normpath(os.path.join(cwd, directory or module))
+cvs_table: dict[tuple, dict] = {}
+for checkout in cvs_checkouts:
+    tag = checkout["tag"]
+    date = checkout["date"]
     if tag is None and date is None:
         date = lock_time
+    root = checkout["root"]
+    module = checkout["module"]
     artifact = vcs_artifact({
         "path": "/".join(["cvs", plain(root), plain(module), plain(tag or date)]),
         "cvs": {"cvsRoot": root, "module": module, "tag": tag, "date": date},
     })
-    by_dir[directory] = artifact
+    by_dir[checkout["dir"]] = artifact
     repo = f"{root} {module}"
-    cvs_checkouts[(repo, ref)] = {"repo": repo, "ref": ref, "artifact": artifact["path"]}
+    cvs_table[(repo, checkout["ref"])] = {"repo": repo, "ref": checkout["ref"], "artifact": artifact["path"]}
 
 # FetchContent_MakeAvailable() dependencies, from the provider's record.
 dependencies: list[dict] = []
@@ -344,9 +220,7 @@ for dep in observed["dependencies"]:
             fail(f"the lock run saw no download of {urls[0]} for dependency {dep['name']}")
         artifact = files[fetched[0]]
         artifact["mirrors"] = [u for u in urls if u != fetched[0]]
-        dependencies.append(
-            {"name": dep["name"], "artifact": artifact["path"], "extract": dep["extract"]}
-        )
+        dependency = {"name": dep["name"], "artifact": artifact["path"], "extract": dep["extract"]}
     else:
         source_dir = os.path.normpath(dep["sourceDir"])
         if source_dir not in by_dir:
@@ -356,7 +230,10 @@ for dep in observed["dependencies"]:
         # the source of the dependency only the listed ones.
         if dep["type"] == "git" and dep.get("submodulePaths"):
             dependency["submodules"] = dep["submodulePaths"]
-        dependencies.append(dependency)
+    # The download as the declaration names it, which the provider of a
+    # build from the lockfile compares with the declaration it sees.
+    dependency["declared"] = dep["declared"]
+    dependencies.append(dependency)
 
 # Outputs, from the install and the File API.
 outputs = None
@@ -404,13 +281,14 @@ def by_repo_ref(table):
 lock = {
     "version": int(lock_version),
     "project": observed["project"],
+    "definitionHash": definition_hash,
     "cmakeFlags": flags,
     "artifacts": sorted([*files.values(), *artifacts.values()], key=lambda a: a["path"]),
     "dependencies": sorted(dependencies, key=lambda d: d["name"]),
-    "gitCheckouts": by_repo_ref(git_checkouts),
-    "hgCheckouts": by_repo_ref(hg_checkouts),
-    "svnCheckouts": by_repo_ref(svn_checkouts),
-    "cvsCheckouts": by_repo_ref(cvs_checkouts),
+    "gitCheckouts": by_repo_ref(git_table),
+    "hgCheckouts": by_repo_ref(hg_table),
+    "svnCheckouts": by_repo_ref(svn_table),
+    "cvsCheckouts": by_repo_ref(cvs_table),
     "outputs": outputs,
 }
 with open(lockfile + ".tmp", "w") as out:

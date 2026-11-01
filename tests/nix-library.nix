@@ -81,6 +81,8 @@ let
     builtins.toJSON (lockOf (import ../nix/lib/lock-version.nix))
   );
   otherVersion = builtins.toFile "cmake-purifier.lock.json" (builtins.toJSON (lockOf 0));
+  # A lockfile that is valid JSON, but not a cmake-purifier lockfile.
+  malformed = builtins.toFile "cmake-purifier.lock.json" (builtins.toJSON { version = 2; });
 
   archive = pkgs.runCommand "archive-1.0.tar.gz" { } ''
     mkdir -p tree/archive-1.0/sub
@@ -114,6 +116,9 @@ assert
   !(builtins.tryEval (import ../nix/lib/lock.nix { lockFile = otherVersion; })).success
   || throw "lock.nix read a lockfile of another format version";
 assert
+  !(builtins.tryEval (import ../nix/lib/lock.nix { lockFile = malformed; })).success
+  || throw "lock.nix read a lockfile without its required keys";
+assert
   builtins.attrNames sources.byName == [
     "Git_Dep"
     "archive"
@@ -135,8 +140,9 @@ pkgs.runCommand "nix-library" { } ''
   # Every file is in the replay tree at its path.
   [ "$(cat $tree/http/https/example.invalid/data/served.txt)" = served ]
 
-  grep -qx "set(FETCHCONTENT_SOURCE_DIR_ARCHIVE \"$TMPDIR/copies/archive\" CACHE PATH \"\" FORCE)" $TMPDIR/cp/cache.cmake
-  grep -qx "set(FETCHCONTENT_SOURCE_DIR_GIT_DEP \"$TMPDIR/copies/Git_Dep\" CACHE PATH \"\" FORCE)" $TMPDIR/cp/cache.cmake
+  grep -qx "set(CMAKE_PURIFIER_SOURCE_ARCHIVE \"$TMPDIR/copies/archive\" CACHE INTERNAL \"\")" $TMPDIR/cp/cache.cmake
+  grep -qx "set(CMAKE_PURIFIER_SOURCE_GIT_DEP \"$TMPDIR/copies/Git_Dep\" CACHE INTERNAL \"\")" $TMPDIR/cp/cache.cmake
+  grep -qx "unset(FETCHCONTENT_SOURCE_DIR_ARCHIVE CACHE)" $TMPDIR/cp/cache.cmake
   grep -qx 'set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)' $TMPDIR/cp/cache.cmake
   grep -qx 'set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES "/provider.cmake" CACHE STRING "" FORCE)' $TMPDIR/cp/cache.cmake
   grep -qx 'set(CMAKE_PURIFIER_LOCKED "Git_Dep;archive;header" CACHE INTERNAL "")' $TMPDIR/cp/cache.cmake

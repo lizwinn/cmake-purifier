@@ -4,6 +4,7 @@
     "name": "purifier-basic",
     "version": "1.2.3"
   },
+  "definitionHash": "a840dee298081d47140abc96a2539a0679d5afcc7bf78a96add402acfe45ea8a",
   "cmakeFlags": [],
   "artifacts": [
     {
@@ -33,17 +34,20 @@
   "dependencies": [
     {
       "name": "argparse",
-      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910"
+      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
+      "declared": "git https://github.com/p-ranav/argparse.git v3.2"
     },
     {
       "name": "doctest",
       "artifact": "https/github.com/doctest/doctest/releases/download/v2.4.11/doctest.h",
-      "extract": false
+      "extract": false,
+      "declared": "url https://github.com/doctest/doctest/releases/download/v2.4.11/doctest.h"
     },
     {
       "name": "fmt",
       "artifact": "https/github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip",
-      "extract": true
+      "extract": true,
+      "declared": "url https://github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip"
     }
   ],
   "gitCheckouts": [
