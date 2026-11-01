@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+#
+# Relocks the fixture with the cmake-purifier of this checkout. The lock
+# run configures the fixture, so it needs the network and a C++ compiler,
+# which nixpkgs provides here.
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+nix shell 'nixpkgs#gcc' 'nixpkgs#gnumake' "$root#cmake-purifier" \
+  -c cmake-purifier lock -S "$root/tests/fixtures/basic"

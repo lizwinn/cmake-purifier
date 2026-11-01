@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "project": {
+    "name": "purifier-basic",
+    "version": "1.2.3"
+  },
+  "cmakeFlags": [],
+  "artifacts": [
+    {
+      "path": "argparse",
+      "git": {
+        "url": "https://github.com/p-ranav/argparse.git",
+        "rev": "3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
+        "submodules": true
+      },
+      "hash": "sha256-w4IU8Yr+zPFOo7xR4YMHlqNJcEov4KU/ppDYrgsGlxM="
+    },
+    {
+      "path": "doctest/doctest.h",
+      "url": "https://github.com/doctest/doctest/releases/download/v2.4.11/doctest.h",
+      "hash": "sha256-RPqgOOnD+XKO+9oUN0jQESTqCif0v3jzWhXY+rLgOfs="
+    },
+    {
+      "path": "fmt/fmt-11.1.4.zip",
+      "url": "https://github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip",
+      "hash": "sha256-SbA5YBGW4adl6BxcmgWmHtPTPyOzlhMj1zIuT+IT0+Y="
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "argparse",
+      "artifact": "argparse"
+    },
+    {
+      "name": "doctest",
+      "artifact": "doctest/doctest.h",
+      "extract": false
+    },
+    {
+      "name": "fmt",
+      "artifact": "fmt/fmt-11.1.4.zip",
+      "extract": true
+    }
+  ]
+}
