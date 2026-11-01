@@ -41,6 +41,10 @@ import sys
 import urllib.parse
 from typing import NoReturn
 
+# python3 -I leaves the script's own directory out of the module path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from urls import https_of, url_path
+
 (work, lock_version, lockfile, nixpkgs, nixlib, git, hg, svn, prefetch) = sys.argv[1:]
 prefetch_vcs = os.path.join(nixlib, "prefetch-vcs.nix")
 build_dir = os.path.join(work, "build")
@@ -62,16 +66,6 @@ def read_lines(name):
 
 def run(*command):
     return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
-
-
-def url_path(url):
-    """The path mitm-cache replays a URL from: <scheme>/<host>/<path>."""
-    parts = urllib.parse.urlsplit(url)
-    host = parts.hostname or ""
-    if parts.port and not (parts.scheme == "https" and parts.port == 443):
-        host = f"{host}:{parts.port}"
-    components = [c for c in parts.path.split("/") if c]
-    return "/".join(c for c in [parts.scheme, host, *components] if c)
 
 
 def plain(text):
@@ -195,16 +189,34 @@ for directory, clone in git_clones.items():
     if not os.path.isdir(directory):
         fail(f"the lock run cloned {clone['url']} into {directory}, which no longer exists")
     rev = run(git, "-C", directory, "rev-parse", "HEAD")
-    path = "/".join(["git", url_path(clone["url"]), rev])
+    # The sandbox has no SSH credentials, so a repository cloned over SSH
+    # is fetched from the HTTPS URL of the same host when that host serves
+    # it there. The checkout keeps the SSH URL, which the shim matches.
+    fetch_urls = [u for u in [https_of(clone["url"]), clone["url"]] if u]
+    path = "/".join(["git", url_path(fetch_urls[0]), rev])
     if path not in artifacts:
-        print(f"cmake-purifier: hashing {clone['url']} at {rev}", file=sys.stderr)
-        command_line = [prefetch, "--quiet", "--url", clone["url"], "--rev", rev]
-        if clone["submodules"]:
-            command_line.append("--fetch-submodules")
+        for fetch_url in fetch_urls:
+            print(f"cmake-purifier: hashing {fetch_url} at {rev}", file=sys.stderr)
+            command_line = [prefetch, "--quiet", "--url", fetch_url, "--rev", rev]
+            if clone["submodules"]:
+                command_line.append("--fetch-submodules")
+            result = subprocess.run(command_line, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                break
+        else:
+            fail(f"could not fetch {clone['url']} at {rev}:\n{result.stderr}")
         artifacts[path] = {
             "path": path,
-            "git": {"url": clone["url"], "rev": rev, "submodules": clone["submodules"]},
-            "hash": json.loads(run(*command_line))["hash"],
+            # The shim answers every command a build makes on a checkout,
+            # so no checkout needs a real .git.
+            "git": {
+                "url": fetch_url,
+                "rev": rev,
+                "submodules": clone["submodules"],
+                "leaveDotGit": False,
+                "commitObject": None,
+            },
+            "hash": json.loads(result.stdout)["hash"],
         }
     by_dir[directory] = artifacts[path]
     ref = clone["ref"] or rev
@@ -339,7 +351,12 @@ for dep in observed["dependencies"]:
         source_dir = os.path.normpath(dep["sourceDir"])
         if source_dir not in by_dir:
             fail(f"the lock run saw no {dep['type']} checkout into {source_dir} for dependency {dep['name']}")
-        dependencies.append({"name": dep["name"], "artifact": by_dir[source_dir]["path"]})
+        dependency = {"name": dep["name"], "artifact": by_dir[source_dir]["path"]}
+        # A GIT_SUBMODULES list: the checkout holds every submodule, and
+        # the source of the dependency only the listed ones.
+        if dep["type"] == "git" and dep.get("submodulePaths"):
+            dependency["submodules"] = dep["submodulePaths"]
+        dependencies.append(dependency)
 
 # Outputs, from the install and the File API.
 outputs = None

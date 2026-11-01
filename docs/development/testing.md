@@ -17,10 +17,16 @@ The tests come in three layers.
      and `ExternalProject_Add()` with an archive that it builds (zlib) and
      with a git checkout (expected-lite).
    - `vcs` builds `tests/fixtures/vcs`, with a FetchContent dependency
-     from Subversion and `ExternalProject_Add()` checkouts from Mercurial
-     and CVS. `vcs-repos` builds its three repositories
+     from Subversion, `ExternalProject_Add()` checkouts from Mercurial and
+     CVS, and a git repository with two submodules, checked out by
+     FetchContent and by `ExternalProject_Add()` with a `GIT_SUBMODULES`
+     list each; the fixture fails when a checkout holds a submodule its
+     list leaves out. `vcs-repos` builds its repositories
      (`tests/vcs-repos.nix`), so no check needs a server; the fixture's
-     fetchers get the repositories as inputs through `vcsFetchers`.
+     fetchers get the repositories as inputs through `vcsFetchers` and
+     `fetchgit`.
+   - `lock-urls` checks the URL rules of the lock run (`lock/urls.py`),
+     the mapping of SSH URLs to HTTPS ones included.
    - `basic-runs`, `extras-runs` and `vcs-runs` run the installed
      programs, and
      `basic-name` checks that the package name and version come from the

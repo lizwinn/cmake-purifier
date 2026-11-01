@@ -11,7 +11,9 @@
       "git": {
         "url": "https://github.com/jarro2783/cxxopts.git",
         "rev": "4bf61f08697b110d9e3991864650a405b3dd515d",
-        "submodules": true
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-aOF3owz7SIV4trJY0PnMtIcwqoUpDbB3tNxZcsl9dzM="
     },
@@ -20,7 +22,9 @@
       "git": {
         "url": "https://github.com/martinmoene/expected-lite.git",
         "rev": "182165b584dad130afaf4bcd25b8629799baea38",
-        "submodules": true
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-8Lf+R7wC7f2YliXqhR6pwVVSLZ6qheu7YOV5jHc0Cjc="
     },
@@ -29,7 +33,9 @@
       "git": {
         "url": "https://github.com/p-ranav/argparse.git",
         "rev": "3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
-        "submodules": true
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-w4IU8Yr+zPFOo7xR4YMHlqNJcEov4KU/ppDYrgsGlxM="
     },

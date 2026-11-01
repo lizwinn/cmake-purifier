@@ -11,7 +11,9 @@
       "git": {
         "url": "https://github.com/p-ranav/argparse.git",
         "rev": "3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
-        "submodules": true
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
       },
       "hash": "sha256-w4IU8Yr+zPFOo7xR4YMHlqNJcEov4KU/ppDYrgsGlxM="
     },

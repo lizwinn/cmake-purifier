@@ -7,8 +7,10 @@
 # `artifacts` is every download of the build. An artifact is either a
 # file, `{ path, url, mirrors, hash }` with the SRI hash of the file and a
 # list of further URLs that serve the same bytes, or a git
-# checkout, `{ path, git = { url, rev, submodules }, hash }` with the SRI
-# NAR hash of the checkout as fetchgit makes it, or a checkout from another
+# checkout, `{ path, git = { url, rev, submodules, leaveDotGit,
+# commitObject }, hash }` with the SRI NAR hash of the checkout as fetchgit
+# makes it, where cmake-purifier writes `leaveDotGit = false` and
+# `commitObject = null`, since the git shim needs no `.git`, or a checkout from another
 # version-control system: `hg = { url, rev, subrepos }`,
 # `svn = { url, rev, ignoreExternals, ignoreKeywords }`, or
 # `cvs = { cvsRoot, module, tag, date }` with one of `tag` and `date` null,

@@ -6,11 +6,12 @@
 # outside FetchContent_MakeAvailable(), and wrappers on top of them such as
 # CPM.cmake.
 #
-# The wrapper sets two variables. CMAKE_PURIFIER_GIT_TABLE names the
+# The wrapper sets three variables. CMAKE_PURIFIER_GIT_TABLE names the
 # table of locked checkouts, a line per checkout with the repository URL,
 # the ref the build asked for, the commit and the store path of the
 # checkout, separated by tabs. CMAKE_PURIFIER_REAL_GIT is the git that
-# runs every command this script does not answer itself.
+# runs every command this script does not answer itself, and
+# CMAKE_PURIFIER_PRUNE is prune-submodules.sh.
 #
 # ExternalProject clones in three steps: `git clone <options> <url> <dir>`,
 # then `git checkout <ref>` in <dir>, then `git submodule update` there. Its
@@ -115,7 +116,18 @@ case "$sub" in
     [ -n "$ref" ] || die "git describe before a checkout of $url"
     printf '%s\n' "$ref"
     ;;
-  submodule | fetch | config | status | remote | reset | stash) ;;
+  submodule)
+    # The checkout holds every submodule. A `submodule update` that names
+    # paths, from a GIT_SUBMODULES list, leaves the others out.
+    paths=()
+    for arg in "${rest[@]:1}"; do
+      case "$arg" in -*) ;; *) paths+=("$arg") ;; esac
+    done
+    if [ "${rest[0]:-}" = update ] && [ "${#paths[@]}" -gt 0 ]; then
+      bash "$CMAKE_PURIFIER_PRUNE" "$dir" "${paths[@]}"
+    fi
+    ;;
+  fetch | config | status | remote | reset | stash) ;;
   symbolic-ref | show-ref) exit 1 ;;
   *) die "git $sub is not supported on the locked checkout of $url in $dir" ;;
 esac

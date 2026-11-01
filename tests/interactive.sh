@@ -44,6 +44,6 @@ grep -q 'Victor Zverovich' "$extras/fmt-LICENSE"
 vcs=$scratch/vcs
 run cmake-purifier configure -S "$root/tests/fixtures/vcs" -B "$vcs"
 run cmake-purifier build -B "$vcs" -j4
-[ "$("$vcs/vcs")" = "svn hg cvs" ]
+[ "$("$vcs/vcs")" = "svn hg cvs sub_a sub_b" ]
 
 echo "interactive: passed"

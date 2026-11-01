@@ -19,12 +19,15 @@
 #   so that the build fetches nothing the lock run did not.
 # - `fetchurl`: replaces the built-in fetcher of URL downloads, for
 #   credentials or mirrors (see fetch.nix).
+# - `fetchgit`: replaces nixpkgs' fetchgit for git checkouts, for a
+#   repository that needs a login, such as fetchgit with its
+#   `netrcPhase`, or with an SSH key the build may use.
 # - `vcsFetchers`: replaces the fetchers of Mercurial, Subversion and CVS
 #   checkouts (see fetchers.nix).
 #
 # Every download goes to the locked copy. FetchContent dependencies come
-# from the initial cache that write-cache.sh writes, git clones from the
-# git shim it installs, and every other download from mitm-cache, which
+# from the initial cache that write-cache.sh writes, checkouts from the
+# shims it installs, and every other download from mitm-cache, which
 # its setup hook starts as the build's HTTP and HTTPS proxy, replaying the
 # locked files.
 #
@@ -53,6 +56,7 @@
   src,
   lockFile ? src + "/cmake-purifier.lock.json",
   fetchurl ? null,
+  fetchgit ? null,
   vcsFetchers ? callPackage ./fetchers.nix { },
   cmakeFlags ? [ ],
   nativeBuildInputs ? [ ],
@@ -62,7 +66,12 @@
   ...
 }@args:
 let
-  sources = callPackage ./sources.nix { inherit lockFile fetchurl vcsFetchers; };
+  sources = callPackage ./sources.nix (
+    {
+      inherit lockFile fetchurl vcsFetchers;
+    }
+    // lib.optionalAttrs (fetchgit != null) { inherit fetchgit; }
+  );
   inherit (sources) lock;
   # A tool the build checks out with, for the commands its shim passes on;
   # empty when the lockfile has no checkouts of it.
@@ -84,6 +93,7 @@ stdenv.mkDerivation (
   removeAttrs args [
     "lockFile"
     "fetchurl"
+    "fetchgit"
     "vcsFetchers"
   ]
   // {

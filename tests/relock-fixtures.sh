@@ -7,7 +7,9 @@
 #
 # The vcs fixture locks against the repositories of tests/vcs-repos.nix,
 # which the flake check `vcs-repos` builds. They are in the read-only
-# store, so CVSREADONLYFS tells cvs to leave no lock files in the CVS one.
+# store, so CVSREADONLYFS tells cvs to leave no lock files in the CVS one,
+# and git clones the git one's submodules over the file transport only
+# with protocol.file.allow set, as the GIT_CONFIG_* variables do.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -21,7 +23,9 @@ lock -S "$root/tests/fixtures/basic"
 lock -S "$root/tests/fixtures/extras"
 
 repos=$(nix build --no-link --print-out-paths "$root#checks.$system.vcs-repos")
-CVSREADONLYFS=1 lock -S "$root/tests/fixtures/vcs" \
+CVSREADONLYFS=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always \
+  lock -S "$root/tests/fixtures/vcs" \
   -DPURIFIER_SVN_URL="file://$repos/svn" \
   -DPURIFIER_HG_URL="file://$repos/hg" \
-  -DPURIFIER_CVS_ROOT="$repos/cvs"
+  -DPURIFIER_CVS_ROOT="$repos/cvs" \
+  -DPURIFIER_GIT_URL="file://$repos/git/super.git"

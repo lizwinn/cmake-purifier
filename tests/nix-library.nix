@@ -44,6 +44,8 @@ let
           url = "https://example.invalid/dep.git";
           inherit rev;
           submodules = false;
+          leaveDotGit = false;
+          commitObject = null;
         };
         hash = lib.fakeHash;
       }

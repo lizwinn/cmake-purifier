@@ -5,15 +5,16 @@
     "version": "0.1.0"
   },
   "cmakeFlags": [
-    "-DPURIFIER_SVN_URL=file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn",
-    "-DPURIFIER_HG_URL=file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/hg",
-    "-DPURIFIER_CVS_ROOT=/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/cvs"
+    "-DPURIFIER_SVN_URL=file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn",
+    "-DPURIFIER_HG_URL=file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg",
+    "-DPURIFIER_CVS_ROOT=/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/cvs",
+    "-DPURIFIER_GIT_URL=file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git"
   ],
   "artifacts": [
     {
-      "path": "cvs/nix_store_jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos_cvs/cvslib/v1",
+      "path": "cvs/nix_store_l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos_cvs/cvslib/v1",
       "cvs": {
-        "cvsRoot": "/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/cvs",
+        "cvsRoot": "/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/cvs",
         "module": "cvslib",
         "tag": "v1",
         "date": null
@@ -21,18 +22,29 @@
       "hash": "sha256-upUwyTAW3R5EmG4WXb5vSejGj3MhDwQ1HQc96KLf1CA="
     },
     {
-      "path": "hg/file/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/hg/685bfa3cbd5c491f716af803921c675c45fb0eb3",
+      "path": "git/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git/d3e733b4f78cd8800d0b52e49589198f0eb3e90a",
+      "git": {
+        "url": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git",
+        "rev": "d3e733b4f78cd8800d0b52e49589198f0eb3e90a",
+        "submodules": true,
+        "leaveDotGit": false,
+        "commitObject": null
+      },
+      "hash": "sha256-SvXQMsWK7XZMKB+RJNxBIfuvFzql0cA4i9j6jFQugp8="
+    },
+    {
+      "path": "hg/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg/685bfa3cbd5c491f716af803921c675c45fb0eb3",
       "hg": {
-        "url": "file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/hg",
+        "url": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg",
         "rev": "685bfa3cbd5c491f716af803921c675c45fb0eb3",
         "subrepos": false
       },
       "hash": "sha256-8dBxporY9nB66bXRvyJpozc9YcYxC2YDcQ1kPf7OuI0="
     },
     {
-      "path": "svn/file/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn/trunk/1",
+      "path": "svn/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk/1",
       "svn": {
-        "url": "file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn/trunk",
+        "url": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk",
         "rev": 1,
         "ignoreExternals": false,
         "ignoreKeywords": false
@@ -42,30 +54,43 @@
   ],
   "dependencies": [
     {
+      "name": "gitfc",
+      "artifact": "git/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git/d3e733b4f78cd8800d0b52e49589198f0eb3e90a",
+      "submodules": [
+        "sub-a"
+      ]
+    },
+    {
       "name": "svnlib",
-      "artifact": "svn/file/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn/trunk/1"
+      "artifact": "svn/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk/1"
     }
   ],
-  "gitCheckouts": [],
+  "gitCheckouts": [
+    {
+      "url": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git",
+      "ref": "v1",
+      "artifact": "git/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/git/super.git/d3e733b4f78cd8800d0b52e49589198f0eb3e90a"
+    }
+  ],
   "hgCheckouts": [
     {
-      "repo": "file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/hg",
+      "repo": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg",
       "ref": "v1",
-      "artifact": "hg/file/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/hg/685bfa3cbd5c491f716af803921c675c45fb0eb3"
+      "artifact": "hg/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/hg/685bfa3cbd5c491f716af803921c675c45fb0eb3"
     }
   ],
   "svnCheckouts": [
     {
-      "repo": "file:///nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn/trunk",
+      "repo": "file:///nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk",
       "ref": "1",
-      "artifact": "svn/file/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/svn/trunk/1"
+      "artifact": "svn/file/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/svn/trunk/1"
     }
   ],
   "cvsCheckouts": [
     {
-      "repo": "/nix/store/jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos/cvs cvslib",
+      "repo": "/nix/store/l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos/cvs cvslib",
       "ref": "r:v1",
-      "artifact": "cvs/nix_store_jhr1d5r6yiq3kqwzc23wky9phkzf9l5r-cmake-purifier-vcs-repos_cvs/cvslib/v1"
+      "artifact": "cvs/nix_store_l0sx5z618bn00xg5w94szwa7jnzdvk84-cmake-purifier-vcs-repos_cvs/cvslib/v1"
     }
   ],
   "outputs": {

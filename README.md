@@ -121,7 +121,18 @@ by building the nixpkgs fetcher of the sandbox build (`fetchhg`,
 `fetchsvn`, `fetchcvs`) with a wrong hash and reading the right one from
 the error, so the hash is the one that build checks, keyword expansion
 and time zone included. A CVS checkout without a tag or a date locks the
-time of the lock run as its date. A redirect
+time of the lock run as its date.
+
+A checkout that names a branch, or no ref at all, locks the commit the
+branch pointed at during the lock run, and the lockfile keeps the branch
+as the ref the build asks for, so the next `cmake-purifier lock` moves it
+to the branch's new commit. A git repository cloned over SSH is locked by
+the HTTPS URL of the same host, since the sandbox has no SSH credentials;
+the lock run keeps the SSH URL only when the host does not serve the
+repository over HTTPS. A `GIT_SUBMODULES` list locks the repository with
+all of its submodules, and a build from the lockfile empties the
+submodules the list leaves out, as git leaves a submodule it does not
+initialize. A redirect
 counts as the file it leads to, and its target is left out, since such
 targets are often signed URLs that expire. The install's manifest gives
 the installed files, and CMake's File API gives the target each one
@@ -182,10 +193,12 @@ Each of these follows from what a build from a lockfile can know.
 - **Two URLs that differ only in their query.** mitm-cache replays a URL
   from the path of its file, which carries no query, so the lock run
   refuses such a pair with an error that names both URLs.
-- **Repositories reached over SSH, or a CVS server that needs a login.**
-  The sandbox has no credentials, so the fetchers cannot fetch from them
-  there. Such a dependency can name its repository with an anonymous HTTPS
-  or pserver URL instead.
+- **A repository that needs a login.** The sandbox has no credentials, so
+  the default fetchers cannot fetch from a repository that serves no
+  anonymous HTTPS, or from a CVS server that needs a login. For git,
+  `buildCMakeProject` takes a `fetchgit` that has the credentials, such as
+  nixpkgs' fetchgit with a `netrcPhase`; for the other tools,
+  `vcsFetchers` replaces the fetchers the same way.
 - **Version-control commands other than the checkout steps, on a locked
   checkout.** A locked checkout holds the files of its revision and no
   history, since the fetchers store only the files, which keeps their
@@ -194,10 +207,6 @@ Each of these follows from what a build from a lockfile can know.
   build asked for). Any other command on a locked checkout, such as
   `git log` in a dependency's CMakeLists.txt, fails with a message that
   names it.
-- **A dependency pinned to a branch** locks the commit the branch pointed
-  at during the lock run, since a branch has no other commit to give.
-- **A `GIT_SUBMODULES` list** locks every submodule of the repository,
-  since `fetchgit` fetches all of them or none.
 
 cmake-purifier follows the design of
 [sbt-purifier](https://github.com/nix-purifiers/sbt-purifier), which was

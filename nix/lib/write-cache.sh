@@ -62,7 +62,7 @@ wrapper() {
 }
 
 wrapper "$dir/git" CMAKE_PURIFIER_GIT_TABLE "$tree/git-checkouts.tsv" CMAKE_PURIFIER_REAL_GIT "$git" \
-  "$lib/git-shim.sh"
+  CMAKE_PURIFIER_PRUNE "$lib/prune-submodules.sh" "$lib/git-shim.sh"
 
 {
   echo '# Written by cmake-purifier from the lockfile; do not edit.'

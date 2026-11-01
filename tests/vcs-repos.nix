@@ -11,10 +11,17 @@
 #   not change from one build to the next.
 # - `cvs`: a repository root with the module `cvslib` and its `cvs.h`,
 #   tagged `v1`.
+# - `git/super.git`: a git repository tagged `v1`, with the submodules
+#   `sub-a` (`a.h`) and `sub-b` (`b.h`), from `git/sub-a.git` and
+#   `git/sub-b.git` by relative URL. Its commits have a fixed author and
+#   date too.
 #
-# `vcsFetchers` is fetchers.nix with these repositories as inputs of each
-# fetch. The lockfile names them by store path only, which gives a fetch no
-# access to them in the sandbox.
+# `vcsFetchers` is fetchers.nix, and `fetchgit` nixpkgs' fetchgit, with
+# these repositories as inputs of each fetch. The lockfile names them by
+# store path only, which gives a fetch no access to them in the sandbox.
+# git clones submodules over the file transport only when
+# `protocol.file.allow` permits it, which `gitConfig` sets, for fetchgit
+# here and for the lock run in tests/relock-fixtures.sh.
 { pkgs }:
 let
   inherit (pkgs) lib;
@@ -24,15 +31,31 @@ let
     inline const char *${name}_text() { return "${name}"; }
   '';
 
+  gitConfig = {
+    GIT_CONFIG_COUNT = "1";
+    GIT_CONFIG_KEY_0 = "protocol.file.allow";
+    GIT_CONFIG_VALUE_0 = "always";
+  };
+
   repos =
     pkgs.runCommand "cmake-purifier-vcs-repos"
-      {
-        nativeBuildInputs = [
-          pkgs.subversion
-          pkgs.mercurial
-          pkgs.cvs
-        ];
-      }
+      (
+        {
+          nativeBuildInputs = [
+            pkgs.subversion
+            pkgs.mercurial
+            pkgs.cvs
+            pkgs.git
+          ];
+          GIT_AUTHOR_NAME = "test";
+          GIT_AUTHOR_EMAIL = "test@example.invalid";
+          GIT_AUTHOR_DATE = "1970-01-01T00:00:00Z";
+          GIT_COMMITTER_NAME = "test";
+          GIT_COMMITTER_EMAIL = "test@example.invalid";
+          GIT_COMMITTER_DATE = "1970-01-01T00:00:00Z";
+        }
+        // gitConfig
+      )
       ''
         mkdir $out work
         export HOME=$TMPDIR
@@ -61,6 +84,27 @@ let
         EOF
         (cd work/cvslib && cvs -Q import -m init cvslib vendor start)
         cvs -Q rtag v1 cvslib
+
+        mkdir $out/git
+        for sub in a b; do
+          git init -q -b main work/sub-$sub
+          cat > work/sub-$sub/$sub.h <<EOF
+        ${header "sub_\${sub}"}
+        EOF
+          git -C work/sub-$sub add $sub.h
+          git -C work/sub-$sub commit -q -m init
+          git clone -q --bare work/sub-$sub $out/git/sub-$sub.git
+        done
+        git init -q -b main work/super
+        # Relative submodule URLs resolve against origin.
+        git -C work/super remote add origin $out/git/super.git
+        echo super > work/super/README
+        git -C work/super add README
+        git -C work/super submodule -q add ../sub-a.git sub-a
+        git -C work/super submodule -q add ../sub-b.git sub-b
+        git -C work/super commit -q -m init
+        git -C work/super tag v1
+        git clone -q --bare work/super $out/git/super.git
       '';
 
   # The text with the repositories' store path, which a lockfile names as
@@ -78,7 +122,12 @@ let
   base = pkgs.callPackage ../nix/lib/fetchers.nix { };
 in
 {
-  inherit repos;
+  inherit repos gitConfig;
+  fetchgit =
+    args:
+    (pkgs.fetchgit (args // { url = withRepos args.url; })).overrideAttrs (old: {
+      env = (old.env or { }) // gitConfig;
+    });
   vcsFetchers.vcs =
     artifact:
     base.vcs (

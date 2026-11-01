@@ -30,7 +30,7 @@ let
   vcsRepos = import ./vcs-repos.nix { inherit pkgs; };
   vcs = withOverlay.buildCMakeProject {
     src = ./fixtures/vcs;
-    inherit (vcsRepos) vcsFetchers;
+    inherit (vcsRepos) vcsFetchers fetchgit;
   };
 
   # The fixture with one more download, built from the fixture's lockfile,
@@ -111,10 +111,19 @@ in
 
   # The program runs with a header from each repository: the Subversion one
   # through FetchContent, the Mercurial and CVS ones through
-  # ExternalProject_Add().
+  # ExternalProject_Add(), and one from each submodule that a
+  # GIT_SUBMODULES list keeps. The fixture itself fails to configure or to
+  # build when a checkout holds a submodule its list leaves out.
   vcs-runs = pkgs.runCommand "vcs-runs" { } ''
     out_text=$(${builtins.head vcs.targets.vcs.files})
-    [ "$out_text" = "svn hg cvs" ] || { echo "vcs printed: $out_text" >&2; exit 1; }
+    [ "$out_text" = "svn hg cvs sub_a sub_b" ] || { echo "vcs printed: $out_text" >&2; exit 1; }
+    touch $out
+  '';
+
+  # The URL rules of the lock run (lock/urls.py), the mapping of SSH URLs
+  # to HTTPS ones included.
+  lock-urls = pkgs.runCommand "lock-urls" { } ''
+    ${pkgs.python3}/bin/python3 -I ${../lock/test_urls.py} ${../lock}
     touch $out
   '';
 

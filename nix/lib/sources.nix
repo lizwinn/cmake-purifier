@@ -44,7 +44,7 @@ let
         name = "${lock.storeName (baseNameOf artifact.git.url)}-${
           builtins.substring 0 12 artifact.git.rev
         }";
-        inherit (artifact.git) url rev;
+        inherit (artifact.git) url rev leaveDotGit;
         inherit (artifact) hash;
         fetchSubmodules = artifact.git.submodules;
       }
@@ -63,7 +63,15 @@ let
       artifact = artifactOf "dependency ${dep.name}" dep.artifact;
       download = fetched.${dep.artifact};
     in
-    if !(artifact ? url) then
+    if dep ? submodules then
+      # A GIT_SUBMODULES list: the checkout holds every submodule, and the
+      # source only the listed ones.
+      runCommand "${lock.storeName dep.name}-source" { preferLocalBuild = true; } ''
+        cp -R ${download} $out
+        chmod -R u+w $out
+        bash ${./prune-submodules.sh} $out ${lib.escapeShellArgs dep.submodules}
+      ''
+    else if !(artifact ? url) then
       download
     else if dep.extract then
       runCommand "${lock.storeName dep.name}-source"
