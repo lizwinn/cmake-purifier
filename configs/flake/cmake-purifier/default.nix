@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-{ ... }:
+{ closure-lib, ... }:
 {
   config,
   inputs,
@@ -8,24 +8,22 @@
 }:
 {
 
-  imports = [ inputs.flake-parts.flakeModules.partitions ];
+  imports = [
+    inputs.flake-parts.flakeModules.partitions
+    closure-lib.caisson.modules.flake."purifier/purifier-packages"
+  ];
 
   debug = false;
-  caisson = {
-    libOverlays.exported = libOverlays: {
-      inherit (libOverlays) default;
-    };
-
-    # The scope `pkgs.cmake-purifier` is the `default` entry of this
-    # flake's package overlay registry (pkg-overlays/): the package set
-    # applies it by default, and the flake exports it as `pkgOverlays` and
-    # as the plain `overlays.default`. The scope also holds the builder, a
-    # function, so the `packages` output below is the derivations of the
-    # scope, and the automatic export of the scope is off.
-    nixpkgs = {
-      packages.export.enabled = false;
-    };
+  caisson.libOverlays.exported = libOverlays: {
+    inherit (libOverlays) default;
   };
+
+  # The scope `pkgs.cmake-purifier` is the `default` entry of the package
+  # overlay registry (pkg-overlays/): the package set applies it by
+  # default, and the flake exports it as `pkgOverlays` and as the plain
+  # `overlays.default`. The module purifier-packages publishes the
+  # derivations of the scope as `packages`.
+  purifier.scope = "cmake-purifier";
 
   # `nix run github:nix-purifiers/cmake-purifier -- lock` locks the build in
   # the current directory. `nix develop github:nix-purifiers/cmake-purifier`
@@ -36,9 +34,7 @@
   perSystem =
     { config, pkgs, ... }:
     {
-      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.cmake-purifier // {
-        default = config.packages.cmake-purifier;
-      };
+      packages.default = config.packages.cmake-purifier;
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.cmake-purifier
