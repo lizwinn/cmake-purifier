@@ -74,15 +74,22 @@ let
       }
     ];
     outputs = null;
+    definitionHash = "";
   };
 
-  # builtins.toFile, so that reading the lockfile needs no build.
-  lockFile = builtins.toFile "cmake-purifier.lock.json" (
-    builtins.toJSON (lockOf (import ../nix/lib/lock-version.nix))
-  );
-  otherVersion = builtins.toFile "cmake-purifier.lock.json" (builtins.toJSON (lockOf 0));
+  # The lockfile with its contentHash, as `cmake-purifier lock` writes
+  # it, through builtins.toFile, so that reading it needs no build.
+  writeLock =
+    body:
+    builtins.toFile "cmake-purifier.lock.json" (
+      builtins.toJSON (
+        body // { contentHash = "sha256:" + builtins.hashString "sha256" (builtins.toJSON body); }
+      )
+    );
+  lockFile = writeLock (lockOf (import ../nix/lib/lock-version.nix));
+  otherVersion = writeLock (lockOf 0);
   # A lockfile that is valid JSON, but not a cmake-purifier lockfile.
-  malformed = builtins.toFile "cmake-purifier.lock.json" (builtins.toJSON { version = 2; });
+  malformed = writeLock { version = import ../nix/lib/lock-version.nix; };
 
   archive = pkgs.runCommand "archive-1.0.tar.gz" { } ''
     mkdir -p tree/archive-1.0/sub
@@ -116,10 +123,10 @@ let
   };
 in
 assert
-  !(builtins.tryEval (import ../nix/lib/lock.nix { lockFile = otherVersion; })).success
+  (import ../nix/lib/lock.nix { lockFile = otherVersion; }).problems != [ ]
   || throw "lock.nix read a lockfile of another format version";
 assert
-  !(builtins.tryEval (import ../nix/lib/lock.nix { lockFile = malformed; })).success
+  (import ../nix/lib/lock.nix { lockFile = malformed; }).problems != [ ]
   || throw "lock.nix read a lockfile without its required keys";
 assert
   builtins.attrNames sources.byName == [

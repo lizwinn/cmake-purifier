@@ -33,6 +33,7 @@
 # lock run did not build, there is no install and the lockfile records no
 # outputs.
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -281,6 +282,14 @@ def by_repo_ref(table):
     return sorted(table.values(), key=lambda c: (c.get("url", c.get("repo")), c["ref"]))
 
 
+def content_hash(document):
+    """The hash of a lockfile without its contentHash: the SHA-256 of its
+    JSON with sorted keys and no spaces, as Nix's builtins.toJSON writes
+    it, so that nix/lib/lock.nix can check it."""
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
+
 lock = {
     "version": int(lock_version),
     "project": observed["project"],
@@ -294,6 +303,7 @@ lock = {
     "cvsCheckouts": by_repo_ref(cvs_table),
     "outputs": outputs,
 }
+lock["contentHash"] = content_hash(lock)
 with open(lockfile + ".tmp", "w") as out:
     json.dump(lock, out, indent=2)
     out.write("\n")

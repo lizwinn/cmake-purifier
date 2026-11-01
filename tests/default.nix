@@ -2,82 +2,165 @@
 #
 # The flake's checks. Every one builds in the sandbox; the only network
 # access is the fixed-output fetches of locked downloads.
+#
+# The `conformance-*` checks are the ones the purifier contract names.
+# `conformance-relock`, `conformance-rebuild` and `conformance-offline`
+# need Nix or the network outside the sandbox, so they are jobs of the CI
+# workflow (.github/workflows/check.yml) instead.
 {
   pkgs,
   # The shared library's functions.
   purifier,
-  # The flake's default package overlay, which adds buildCMakeProject.
-  overlay,
+  # lib.cmake-purifier.buildCMakeProject and readLock of the flake.
+  buildCMakeProject,
+  readLock,
   cmake-purifier,
 }:
 let
-  # The fixture builds the way a consumer's package does: through
-  # buildCMakeProject of a package set the overlay applies to.
-  withOverlay = pkgs.extend overlay;
+  inherit (pkgs) lib;
 
-  basic = withOverlay.buildCMakeProject {
+  # The fixture builds the way a consumer's package does: through the
+  # library's buildCMakeProject.
+  basic = buildCMakeProject {
+    inherit pkgs;
     src = ./fixtures/basic;
-    # ctest runs the doctest suite, which includes the header that the
-    # lock records as a download FetchContent does not extract.
-    doCheck = true;
   };
+  basicPackage = basic.packages.purifier-basic;
 
   # Downloads outside FetchContent_MakeAvailable(): file(DOWNLOAD) at
   # configure and build time, CPM.cmake, and ExternalProject_Add() with a
   # URL and with git.
-  extras = withOverlay.buildCMakeProject { src = ./fixtures/extras; };
+  extras =
+    (buildCMakeProject {
+      inherit pkgs;
+      src = ./fixtures/extras;
+    }).packages.purifier-extras;
 
   # Checkouts from Subversion, Mercurial, git with submodules and CVS, of
   # repositories the checks build themselves. CVS has a fixture of its
   # own, which only x86_64-linux builds.
   vcsRepos = import ./vcs-repos.nix { inherit pkgs; };
-  vcs = withOverlay.buildCMakeProject {
-    src = ./fixtures/vcs;
-    inherit (vcsRepos) fetchers;
-  };
-  cvs = withOverlay.buildCMakeProject {
-    src = ./fixtures/cvs;
-    inherit (vcsRepos) fetchers;
-  };
+  vcs =
+    (buildCMakeProject {
+      inherit pkgs;
+      src = ./fixtures/vcs;
+      inherit (vcsRepos) fetchers;
+    }).packages.purifier-vcs;
+  cvs =
+    (buildCMakeProject {
+      inherit pkgs;
+      src = ./fixtures/cvs;
+      inherit (vcsRepos) fetchers;
+    }).packages.purifier-cvs;
 
-  # The fixture with fmt at another version, built from the lockfile of
-  # the old one.
-  upgraded = withOverlay.buildCMakeProject {
-    src = pkgs.runCommand "basic-upgraded" { } ''
+  # The basic fixture's lockfile, and a lockfile made from it, with the
+  # contentHash that `cmake-purifier lock` would write.
+  basicLockFile = ./fixtures/basic/cmake-purifier.lock.json;
+  basicLock = lib.importJSON basicLockFile;
+  writeLock =
+    name: body:
+    let
+      content = removeAttrs body [ "contentHash" ];
+    in
+    # builtins.toFile, since the builder reads the lockfile at evaluation,
+    # where a build output would be import-from-derivation.
+    builtins.toFile name (
+      builtins.toJSON (
+        content // { contentHash = "sha256:" + builtins.hashString "sha256" (builtins.toJSON content); }
+      )
+    );
+
+  # A copy of the basic fixture with a shell command applied, as a
+  # derivation, so that the build rather than the evaluation reads it.
+  basicWith =
+    name: edit:
+    pkgs.runCommand name { } ''
       cp -r ${./fixtures/basic} $out
       chmod -R u+w $out
-      substituteInPlace $out/CMakeLists.txt --replace-fail 11.1.4/fmt-11.1.4.zip 11.2.0/fmt-11.2.0.zip
+      ${edit}
     '';
-    lockFile = ./fixtures/basic/cmake-purifier.lock.json;
-  };
 
-  # The fixture with one more download, built from the fixture's lockfile,
-  # which does not hold it.
-  unlocked = withOverlay.buildCMakeProject {
-    src = pkgs.runCommand "basic-unlocked" { } ''
-      cp -r ${./fixtures/basic} $out
-      chmod -R u+w $out
-      cat >> $out/CMakeLists.txt <<'EOF'
-      FetchContent_Declare(extra URL https://example.invalid/extra.zip)
-      FetchContent_MakeAvailable(extra)
-      EOF
+  # A build of a copy of the basic fixture that must fail with output
+  # that matches <pattern>.
+  buildFails =
+    name:
+    {
+      src,
+      lockFile ? basicLockFile,
+      pattern,
+    }:
+    pkgs.runCommand name
+      {
+        failed =
+          pkgs.testers.testBuildFailure
+            (buildCMakeProject { inherit pkgs src lockFile; }).packages.purifier-basic;
+      }
+      ''
+        grep -q -- ${lib.escapeShellArg pattern} $failed/testBuildFailure.log || {
+          echo "${name}: the build failed without '${pattern}':" >&2
+          cat $failed/testBuildFailure.log >&2
+          exit 1
+        }
+        touch $out
+      '';
+
+  # Reading <lockFile> for a copy of <src> with nix/lib/lock.nix must fail
+  # at evaluation, with an error that matches <pattern>: the evaluation
+  # fails with the lock's problems, as the shared library's checkLock
+  # does. It runs inside the sandbox, on a dummy store, from copies of the
+  # library and of the source, since only builtins are needed.
+  evalFails =
+    name:
+    {
+      lockFile,
+      src ? null,
+      edit ? "",
+      pattern,
+    }:
+    pkgs.runCommand name { nativeBuildInputs = [ pkgs.nix ]; } ''
+      export HOME=$TMPDIR NIX_STATE_DIR=$TMPDIR/state NIX_CONF_DIR=$TMPDIR
+      cp -r ${../nix/lib} lib
+      cp ${lockFile} lock.json
+      ${lib.optionalString (src != null) ''
+        cp -r ${src} project
+        chmod -R u+w project
+        ${edit}
+      ''}
+      if nix-instantiate --store dummy:// --eval --strict -E \
+        "let lock = import $PWD/lib/lock.nix { lockFile = $PWD/lock.json; ${
+          lib.optionalString (src != null) "src = $PWD/project;"
+        } }; in if lock.problems == [ ] then lock.purifier else throw (builtins.concatStringsSep \"\n\" lock.problems)" > log 2>&1; then
+        echo "${name}: the evaluation succeeded" >&2
+        exit 1
+      fi
+      grep -q -- ${lib.escapeShellArg pattern} log || {
+        echo "${name}: the evaluation failed without '${pattern}':" >&2
+        cat log >&2
+        exit 1
+      }
+      touch $out
     '';
-    lockFile = ./fixtures/basic/cmake-purifier.lock.json;
-  };
+
+  # The command that fixes a broken lockfile, as every error names it.
+  relock = "cmake-purifier lock";
 in
 {
-  inherit basic;
+  basic = basicPackage;
+
+  # ctest runs the doctest suite, which includes the header that the lock
+  # records as a download FetchContent does not extract.
+  basic-tests = basic.tests;
 
   # The installed program runs, with fmt and argparse from the lockfile.
   basic-runs = pkgs.runCommand "basic-runs" { } ''
-    out_text=$(${basic}/bin/greet --name purifier)
+    out_text=$(${basicPackage}/bin/greet --name purifier)
     [ "$out_text" = "Hello, purifier!" ] || { echo "greet printed: $out_text" >&2; exit 1; }
     touch $out
   '';
 
   # The package name and version come from the lockfile's project().
   basic-name = pkgs.runCommand "basic-name" { } ''
-    [ ${basic.pname} = purifier-basic ] && [ ${basic.version} = 1.2.3 ]
+    [ ${basicPackage.pname} = purifier-basic ] && [ ${basicPackage.version} = 1.2.3 ]
     touch $out
   '';
 
@@ -86,14 +169,45 @@ in
   # fmt installs itself as part of the fixture, so its static library is
   # an output too.
   basic-outputs =
-    assert basic.targets.greet.type == "EXECUTABLE";
-    assert basic.targets.greet.files == [ "${basic}/bin/greet" ];
-    assert basic.targets.fmt.files == [ "${basic}/lib/libfmt.a" ];
-    assert builtins.elem "include/fmt/format.h" (builtins.attrNames basic.installed);
+    assert basicPackage.targets.greet.type == "EXECUTABLE";
+    assert basicPackage.targets.greet.files == [ "${basicPackage}/bin/greet" ];
+    assert basicPackage.targets.fmt.files == [ "${basicPackage}/lib/libfmt.a" ];
+    assert builtins.elem "include/fmt/format.h" (builtins.attrNames basicPackage.installed);
     pkgs.runCommand "basic-outputs" { } ''
-      [ "$(${builtins.head basic.targets.greet.files} --name outputs)" = "Hello, outputs!" ]
+      [ "$(${builtins.head basicPackage.targets.greet.files} --name outputs)" = "Hello, outputs!" ]
       touch $out
     '';
+
+  # The release is the installed project as one tarball, with the program
+  # in it.
+  basic-release = pkgs.runCommand "basic-release" { } ''
+    tarball=${basic.release}/purifier-basic-1.2.3-${pkgs.stdenv.hostPlatform.system}.tar.gz
+    tar -tzf $tarball > listing
+    grep -qx './bin/greet' listing
+    touch $out
+  '';
+
+  # `fetches` is the lockfile's artifacts, so an SBOM tool reads the
+  # downloads without the lockfile's format.
+  basic-fetches =
+    assert basic.fetches == basicLock.artifacts;
+    assert builtins.all (entry: entry ? hash) basic.fetches;
+    pkgs.runCommand "basic-fetches" { } "touch $out";
+
+  # readLock gives the lock in memory of the contract, which the shared
+  # library's checkLock accepts, with the outputs under the project's name.
+  read-lock =
+    let
+      lock = purifier.checkLock (readLock {
+        src = ./fixtures/basic;
+      });
+    in
+    assert lock.purifier == "cmake-purifier";
+    assert lock.entries == basicLock.artifacts;
+    assert builtins.attrNames lock.outputs == [ "purifier-basic" ];
+    assert lock.problems == [ ];
+    assert (readLock { lockFile = ./fixtures/basic/cmake-purifier.lock.json; }).problems == [ ];
+    pkgs.runCommand "read-lock" { } "touch $out";
 
   inherit extras;
 
@@ -152,47 +266,111 @@ in
     touch $out
   '';
 
-  # The copy of each fixture that a build gets hashes to the definition
-  # hash its lockfile recorded, so a build warns only when the definition
-  # changed; after an edit to a CMakeLists.txt, it hashes differently.
-  definition-hash = pkgs.runCommand "definition-hash" { } ''
-    for fixture in basic extras vcs cvs; do
-      case $fixture in
-        cvs) src=${./fixtures/cvs} ;;
-        basic) src=${./fixtures/basic} ;;
-        extras) src=${./fixtures/extras} ;;
-        vcs) src=${./fixtures/vcs} ;;
-      esac
-      locked=$(${pkgs.jq}/bin/jq -r .definitionHash $src/cmake-purifier.lock.json)
-      [ "$(bash ${../nix/lib/definition-hash.sh} $src)" = "$locked" ] ||
-        { echo "$fixture hashes differently from its lockfile" >&2; exit 1; }
-    done
-    cp -r ${./fixtures/basic} edited
-    chmod -R u+w edited
-    echo '# an edit' >> edited/lib/CMakeLists.txt
-    [ "$(bash ${../nix/lib/definition-hash.sh} edited)" != "$(${pkgs.jq}/bin/jq -r .definitionHash edited/cmake-purifier.lock.json)" ]
-    touch $out
-  '';
+  # The shell and the Nix definition hash agree on every fixture, and
+  # both match the lockfile, so that neither check fails a fixture that
+  # did not change.
+  definition-hash =
+    let
+      fixtures = {
+        basic = ./fixtures/basic;
+        extras = ./fixtures/extras;
+        vcs = ./fixtures/vcs;
+        cvs = ./fixtures/cvs;
+      };
+    in
+    pkgs.runCommand "definition-hash" { } (
+      lib.concatStrings (
+        lib.mapAttrsToList (name: src: ''
+          [ "$(bash ${../nix/lib/definition-hash.sh} ${src})" = ${import ../nix/lib/definition-hash.nix src} ] ||
+            { echo "${name}: the shell and the Nix definition hash differ" >&2; exit 1; }
+          [ ${import ../nix/lib/definition-hash.nix src} = ${
+            (lib.importJSON (src + "/cmake-purifier.lock.json")).definitionHash
+          } ] ||
+            { echo "${name} hashes differently from its lockfile" >&2; exit 1; }
+        '') fixtures
+      )
+      + "touch $out\n"
+    );
 
-  # A dependency whose declaration changed since the lock run, such as a
-  # new version, stops the configure with the hint to relock.
-  declaration-changed-fails =
-    pkgs.runCommand "declaration-changed-fails" { failed = pkgs.testers.testBuildFailure upgraded; }
-      ''
-        grep -q "cmake-purifier: the dependency fmt now declares the download" $failed/testBuildFailure.log
-        grep -q 'warning: a CMakeLists.txt or \*.cmake file changed' $failed/testBuildFailure.log
-        touch $out
-      '';
+  # A lockfile older than the project fails: at evaluation when `src` is a
+  # path, and before the configure when it is a derivation.
+  conformance-stale =
+    let
+      edit = "echo '# an edit' >> project/lib/CMakeLists.txt";
+      atEvaluation = evalFails "conformance-stale-evaluation" {
+        lockFile = basicLockFile;
+        src = ./fixtures/basic;
+        inherit edit;
+        pattern = "is older than the project: a CMakeLists.txt or \\*.cmake file changed since it was written. Run `${relock}`";
+      };
+      atBuild = buildFails "conformance-stale-build" {
+        src = basicWith "basic-stale" "echo '# an edit' >> $out/lib/CMakeLists.txt";
+        pattern = "is older than the project: a CMakeLists.txt or \\*.cmake file changed since it was written. Run `${relock}`";
+      };
+    in
+    pkgs.runCommand "conformance-stale" { inherit atEvaluation atBuild; } "touch $out";
 
-  # A download the lockfile does not hold stops the configure with the
-  # hint to relock.
-  unlocked-fails =
-    pkgs.runCommand "unlocked-fails" { failed = pkgs.testers.testBuildFailure unlocked; }
-      ''
-        # CMake wraps the message, so the check matches its first line.
-        grep -q 'cmake-purifier: the build declares the dependency extra, which the lockfile' $failed/testBuildFailure.log
-        touch $out
-      '';
+  # A lockfile whose hash of a download was edited fails, since its
+  # content no longer matches its contentHash.
+  conformance-tampered = evalFails "conformance-tampered" {
+    lockFile = pkgs.writeText "tampered.json" (
+      builtins.toJSON (
+        basicLock
+        // {
+          artifacts = map (
+            a: a // { hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; }
+          ) basicLock.artifacts;
+        }
+      )
+    );
+    pattern = "was edited: its content no longer matches its contentHash.";
+  };
+
+  # A lockfile without the dependency fmt, which the build declares,
+  # fails at the configure.
+  conformance-missing = buildFails "conformance-missing" {
+    src = ./fixtures/basic;
+    lockFile = writeLock "missing.json" (
+      basicLock // { dependencies = builtins.filter (d: d.name != "fmt") basicLock.dependencies; }
+    );
+    # CMake wraps the message, so the check matches its first line.
+    pattern = "cmake-purifier: the build declares the dependency fmt, which the lockfile";
+  };
+
+  # A lockfile that is not valid JSON fails, and so does valid JSON that
+  # is not a cmake-purifier lockfile; both errors name the command.
+  conformance-malformed =
+    let
+      invalid = evalFails "conformance-malformed-json" {
+        lockFile = pkgs.writeText "invalid.json" ''{ "version": 3,'';
+        pattern = "run `${relock}` to write it again";
+      };
+      incomplete = evalFails "conformance-malformed-keys" {
+        lockFile = pkgs.writeText "incomplete.json" ''{ "version": 3 }'';
+        pattern = "is not a cmake-purifier lockfile: it has no project, definitionHash";
+      };
+    in
+    pkgs.runCommand "conformance-malformed" { inherit invalid incomplete; } "touch $out";
+
+  # The basic fixture builds from its lockfile kept outside `src`, which
+  # holds no lockfile of its own.
+  conformance-external =
+    let
+      external = buildCMakeProject {
+        inherit pkgs;
+        src = lib.fileset.toSource {
+          root = ./fixtures/basic;
+          fileset = lib.fileset.difference ./fixtures/basic basicLockFile;
+        };
+        lockFile = basicLockFile;
+      };
+      package = external.packages.purifier-basic;
+    in
+    pkgs.runCommand "conformance-external" { } ''
+      [ ! -e ${package.src}/cmake-purifier.lock.json ]
+      [ "$(${package}/bin/greet --name external)" = "Hello, external!" ]
+      touch $out
+    '';
 
   nix-library = import ./nix-library.nix { inherit pkgs purifier; };
 

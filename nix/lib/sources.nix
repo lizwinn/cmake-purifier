@@ -24,17 +24,37 @@
 {
   lib,
   pkgs,
+  stdenv,
   runCommand,
   cmake,
   purifier,
   lockFile,
+  # The project's source, for the check that the lockfile is not older
+  # than the project; see lock.nix.
+  projectSrc ? null,
   # Fetchers that replace the ones fetchEntry uses, by their names
   # (fetchurl, fetchgit, fetchhg, fetchsvn, fetchcvs), for credentials or
   # mirrors. Each takes the arguments of the nixpkgs fetcher of its name.
   fetchers ? { },
 }:
 let
-  lock = import ./lock.nix { inherit lockFile; };
+  # The lock in memory, checked by the shared library, and the lockfile's
+  # own fields.
+  memory = purifier.checkLock (
+    import ./lock.nix {
+      inherit lockFile;
+      src = projectSrc;
+    }
+  );
+  lock = memory.cmake;
+  # The entries this system needs, by path.
+  entries = purifier.entriesFor stdenv.hostPlatform.system memory;
+  entriesByPath = builtins.listToAttrs (
+    map (entry: {
+      name = entry.path;
+      value = entry;
+    }) entries
+  );
 
   fetcherArgs = {
     inherit pkgs;
@@ -42,11 +62,11 @@ let
   // fetchers;
 
   # Each artifact fetched once, by its path.
-  fetched = builtins.mapAttrs (_: purifier.fetchEntry fetcherArgs) lock.artifactsByPath;
+  fetched = builtins.mapAttrs (_: purifier.fetchEntry fetcherArgs) entriesByPath;
 
   artifactOf =
     what: path:
-    lock.artifactsByPath.${path}
+    entriesByPath.${path}
       or (throw "cmake-purifier: ${what} names the artifact ${path}, which ${toString lockFile} does not lock");
 
   source =
@@ -95,7 +115,7 @@ let
     fetcherArgs
     // {
       name = "cmake-purifier-http";
-      entries = builtins.filter (artifact: artifact ? url) lock.artifacts;
+      entries = builtins.filter (artifact: artifact ? url) entries;
     }
   );
 
@@ -110,7 +130,7 @@ let
     ) (lock."${tool}Checkouts" or [ ]);
 in
 {
-  inherit lock byName;
+  inherit memory lock byName;
   # The manifests go to the builder as files, since a build can lock many
   # downloads.
   tree =

@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "project": {
     "name": "purifier-cvs",
     "version": "0.1.0"
@@ -43,5 +43,6 @@
         ]
       }
     }
-  }
+  },
+  "contentHash": "sha256:88a0387d5e5534a4ddfad3878fd6112927ee834c1b6417fc45106b6ae3a12b01"
 }

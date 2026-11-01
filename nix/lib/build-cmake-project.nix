@@ -1,24 +1,31 @@
 # SPDX-License-Identifier: MIT
 #
 # buildCMakeProject: builds and installs a CMake project in the sandbox
-# from its cmake-purifier lockfile. The package overlay adds it to a
-# package set, so a package written for callPackage takes it by name.
+# from its cmake-purifier lockfile. The flake's library publishes it as
+# `lib.cmake-purifier.buildCMakeProject`.
 #
-#   buildCMakeProject { src = ./.; }
+#   lib.cmake-purifier.buildCMakeProject { inherit pkgs; src = ./.; }
 #
-# The derivation is stdenv.mkDerivation with nixpkgs' cmake setup hook,
-# so every mkDerivation argument works as usual: `buildInputs` for the
-# libraries find_package() looks for, `doCheck` to run ctest, and so on.
-# The arguments of the builder itself:
+# The package is stdenv.mkDerivation of `pkgs` with nixpkgs' cmake setup
+# hook, so every mkDerivation argument works as usual: `buildInputs` for
+# the libraries find_package() looks for, and so on. The arguments of the
+# builder itself:
 #
-# - `src`: the project. Its lockfile is `cmake-purifier.lock.json` at the
-#   root, unless `lockFile` names another.
+# - `pkgs`: the package set that builds the project and fetches its
+#   downloads.
+# - `src`: the project.
+# - `lockFile`: the lockfile, by default `cmake-purifier.lock.json` at the
+#   root of `src`. A lockfile outside `src` is the one the build reads,
+#   and a copy in `src` plays no part, so a packaging flake can lock a
+#   project it does not change. When `src` is a path, evaluation fails
+#   for a lockfile older than the project's build definition; for any
+#   other `src`, the build fails before the configure.
 # - `pname` and `version`: by default the name and version of the
 #   top-level project(), which the lockfile records.
 # - `cmakeFlags`: flags after the ones the lock run used, which come first
 #   so that the build fetches nothing the lock run did not.
 # - `fetchers`: fetchers that replace the ones the shared library's
-#   fetchEntry uses, by name: `fetchurl`, `fetchgit`, `fetchhg`,
+#   fetchEntry and tree use, by name: `fetchurl`, `fetchgit`, `fetchhg`,
 #   `fetchsvn` and `fetchcvs`. Each takes the arguments of the nixpkgs
 #   fetcher of its name. They are the place for credentials and mirrors,
 #   such as a fetchgit with a `netrcPhase` for a repository that needs a
@@ -28,33 +35,28 @@
 # from the initial cache that write-cache.sh writes, checkouts from the
 # shims it installs, and every other download from mitm-cache, which
 # its setup hook starts as the build's HTTP and HTTPS proxy, replaying the
-# locked files.
+# locked files. After the install, the build checks that every file the
+# lockfile names is in the output.
 #
-# The lockfile names the outputs of the build, so the derivation's
-# passthru knows them without building it:
+# The result has four attributes, each known at evaluation time:
 #
-# - `installed."<path>"` is each file the install writes, as a path in the
-#   derivation's output, by its path relative to the install prefix.
-# - `targets.<name>` is each installed target, with its CMake `type` and
-#   the installed `files` of its artifacts, as paths in the output.
-#
-# After the install, the build checks that every file the lockfile names
-# is in the output. `passthru.sources` is the sources of sources.nix.
+# - `packages.<pname>`: the installed project. Its passthru knows the
+#   outputs from the lockfile, without a build: `installed."<path>"` is
+#   each file the install writes, as a path in the output, by its path
+#   relative to the install prefix, and `targets.<name>` is each
+#   installed target, with its CMake `type` and the installed `files` of
+#   its artifacts. `sources` is the sources of sources.nix.
+# - `tests`: the same build with ctest run after it.
+# - `release`: a directory with `<pname>-<version>-<system>.tar.gz`, the
+#   installed project as a reproducible tarball, which
+#   `cmake-purifier publish` uploads. Its programs and libraries refer to
+#   the store paths of their runtime dependencies, like the outputs of
+#   any Nix build.
+# - `fetches`: the `entries` of the lock in memory (readLock, lock.nix),
+#   the download entries of the shared library that the build fetches.
+{ purifier }:
 {
-  lib,
-  stdenv,
-  cmake,
-  git,
-  mercurial,
-  subversion,
-  cvs,
-  mitm-cache,
-  callPackage,
-  # The shared library's functions (lib.purifier of the purifier flake),
-  # which the package overlay passes.
-  purifier,
-}:
-{
+  pkgs,
   src,
   lockFile ? src + "/cmake-purifier.lock.json",
   fetchers ? { },
@@ -66,7 +68,20 @@
   ...
 }@args:
 let
-  sources = callPackage ./sources.nix { inherit lockFile fetchers purifier; };
+  inherit (pkgs)
+    lib
+    stdenv
+    cmake
+    git
+    mercurial
+    subversion
+    cvs
+    mitm-cache
+    ;
+  sources = pkgs.callPackage ./sources.nix {
+    inherit lockFile fetchers purifier;
+    projectSrc = src;
+  };
   inherit (sources) lock;
   # A tool the build checks out with, for the commands its shim passes on;
   # empty when the lockfile has no checkouts of it.
@@ -74,6 +89,8 @@ let
     tool: package: name:
     if (lock."${tool}Checkouts" or [ ]) != [ ] then "${package}/bin/${name}" else "";
   projectVersion = lock.project.version or "";
+  pname = args.pname or lock.project.name;
+  version = args.version or (if projectVersion == "" then "0" else projectVersion);
   outputs =
     if lock.outputs == null then
       {
@@ -82,60 +99,80 @@ let
       }
     else
       lock.outputs;
-in
-stdenv.mkDerivation (
-  finalAttrs:
-  removeAttrs args [
-    "lockFile"
-    "fetchers"
-  ]
-  // {
-    pname = args.pname or lock.project.name;
-    version = args.version or (if projectVersion == "" then "0" else projectVersion);
-    inherit src;
-    nativeBuildInputs = [
-      cmake
-      mitm-cache
+
+  package = stdenv.mkDerivation (
+    finalAttrs:
+    removeAttrs args [
+      "pkgs"
+      "lockFile"
+      "fetchers"
     ]
-    ++ nativeBuildInputs;
-    mitmCache = "${sources.tree}/http";
-    cmakeFlags = lock.cmakeFlags ++ cmakeFlags;
-    preConfigure = ''
-      ${lib.optionalString ((lock.definitionHash or "") != "") ''
+    // {
+      inherit pname version src;
+      nativeBuildInputs = [
+        cmake
+        mitm-cache
+      ]
+      ++ nativeBuildInputs;
+      mitmCache = "${sources.tree}/http";
+      cmakeFlags = lock.cmakeFlags ++ cmakeFlags;
+      preConfigure = ''
         if [ "$(bash ${./definition-hash.sh} .)" != ${lib.escapeShellArg lock.definitionHash} ]; then
-          echo "cmake-purifier: warning: a CMakeLists.txt or *.cmake file changed since the lockfile was written. If the build now downloads something new, it fails; run \`cmake-purifier lock\` to lock it." >&2
+          echo "cmake-purifier: ${toString lockFile} is older than the project: a CMakeLists.txt or *.cmake file changed since it was written. Run \`cmake-purifier lock\` to lock the project again." >&2
+          exit 1
         fi
-      ''}
-      bash ${./write-cache.sh} ${sources.tree} "$NIX_BUILD_TOP/cmake-purifier/sources" "$NIX_BUILD_TOP/cmake-purifier/cache.cmake" \
-        ${../../cmake}/CMakePurifierLocked.cmake ${./.} ${git}/bin/git \
-        "${realTool "hg" mercurial "hg"}" "${
-          realTool "svn" subversion "svn"
-        }" "${realTool "cvs" cvs "cvs"}"
-      cmakeFlagsArray+=(-C "$NIX_BUILD_TOP/cmake-purifier/cache.cmake")
-    ''
-    + preConfigure;
-    lockedOutputs = lib.concatMapStrings (f: "${f}\n") outputs.files;
-    passAsFile = [ "lockedOutputs" ];
-    postInstall = postInstall + ''
-      missing=0
-      while IFS= read -r file; do
-        if [ ! -e "$out/$file" ] && [ ! -L "$out/$file" ]; then
-          echo "cmake-purifier: the lockfile names the output $file, which the install did not write. Run \`cmake-purifier lock\` again." >&2
-          missing=1
-        fi
-      done < "$lockedOutputsPath"
-      [ "$missing" = 0 ]
-    '';
-    passthru = passthru // {
-      inherit sources;
-      installed = lib.genAttrs outputs.files (file: "${finalAttrs.finalPackage}/${file}");
-      targets = builtins.mapAttrs (
-        _: target:
-        target
-        // {
-          files = map (file: "${finalAttrs.finalPackage}/${file}") target.files;
-        }
-      ) outputs.targets;
-    };
-  }
-)
+        bash ${./write-cache.sh} ${sources.tree} "$NIX_BUILD_TOP/cmake-purifier/sources" "$NIX_BUILD_TOP/cmake-purifier/cache.cmake" \
+          ${../../cmake}/CMakePurifierLocked.cmake ${./.} ${git}/bin/git \
+          "${realTool "hg" mercurial "hg"}" "${
+            realTool "svn" subversion "svn"
+          }" "${realTool "cvs" cvs "cvs"}"
+        cmakeFlagsArray+=(-C "$NIX_BUILD_TOP/cmake-purifier/cache.cmake")
+      ''
+      + preConfigure;
+      lockedOutputs = lib.concatMapStrings (f: "${f}\n") outputs.files;
+      passAsFile = [ "lockedOutputs" ];
+      postInstall = postInstall + ''
+        missing=0
+        while IFS= read -r file; do
+          if [ ! -e "$out/$file" ] && [ ! -L "$out/$file" ]; then
+            echo "cmake-purifier: the lockfile names the output $file, which the install did not write. Run \`cmake-purifier lock\` again." >&2
+            missing=1
+          fi
+        done < "$lockedOutputsPath"
+        [ "$missing" = 0 ]
+      '';
+      passthru = passthru // {
+        inherit sources;
+        installed = lib.genAttrs outputs.files (file: "${finalAttrs.finalPackage}/${file}");
+        targets = builtins.mapAttrs (
+          _: target:
+          target
+          // {
+            files = map (file: "${finalAttrs.finalPackage}/${file}") target.files;
+          }
+        ) outputs.targets;
+      };
+    }
+  );
+in
+{
+  packages.${pname} = package;
+
+  tests = package.overrideAttrs {
+    pname = "${pname}-tests";
+    doCheck = true;
+  };
+
+  release =
+    pkgs.runCommand "${pname}-${version}-release"
+      {
+        nativeBuildInputs = [ pkgs.gnutar ];
+      }
+      ''
+        mkdir $out
+        tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner -C ${package} -cf - . |
+          gzip -9n > $out/${pname}-${version}-${stdenv.hostPlatform.system}.tar.gz
+      '';
+
+  fetches = sources.memory.entries;
+}

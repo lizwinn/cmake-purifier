@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "project": {
     "name": "purifier-basic",
     "version": "1.2.3"
@@ -98,5 +98,6 @@
         ]
       }
     }
-  }
+  },
+  "contentHash": "sha256:b4816e776d76a1496f0eb222f90feede6d2bb74fbebaab3f436342649e88566f"
 }

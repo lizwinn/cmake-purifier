@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: MIT
 #
-# The `cmake-purifier` library namespace. It holds nothing: the builder
-# needs a package set, so it is the package `buildCMakeProject` that the
-# default package overlay adds.
+# The `cmake-purifier` library namespace: the builder `buildCMakeProject`
+# (nix/lib/build-cmake-project.nix), on the shared library's functions,
+# and `readLock` (nix/lib/lock.nix), which reads a lockfile into the lock
+# in memory of the purifier contract.
 { ... }:
 {
 
   overlay = final: prev: {
-    cmake-purifier = prev.cmake-purifier or { };
+    cmake-purifier = (prev.cmake-purifier or { }) // {
+      buildCMakeProject = import ../../nix/lib/build-cmake-project.nix { inherit (final) purifier; };
+      readLock = import ../../nix/lib/lock.nix;
+    };
   };
 
 }

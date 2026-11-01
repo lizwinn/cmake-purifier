@@ -2,9 +2,15 @@
 #
 # The `cmake-purifier` command.
 #
-#   cmake-purifier lock [--no-build] [-S <source dir>] [<cmake configure arguments>...]
-#   cmake-purifier configure -B <build dir> [-S <source dir>] [<cmake configure arguments>...]
-#   cmake-purifier build -B <build dir> [<cmake --build arguments>...]
+#   cmake-purifier lock [--no-build] [-S <source dir>] [--lockfile <path>] [<cmake configure arguments>...]
+#   cmake-purifier prefetch [-S <source dir>] [--lockfile <path>]
+#   cmake-purifier replay [-S <source dir>] [--lockfile <path>] -- <command>...
+#   cmake-purifier publish [--lockfile <path>] [--repo <owner>/<name>] <tag> <installable>
+#
+# The lockfile is <source dir>/cmake-purifier.lock.json, unless
+# --lockfile or, after it, the environment variable CMAKE_PURIFIER_LOCKFILE
+# names another. The directory .cmake-purifier beside the lockfile holds
+# what `prefetch` writes.
 #
 # `lock` configures and builds the project once in a scratch directory,
 # with the network and an empty FetchContent download directory. Three
@@ -13,8 +19,7 @@
 # GIT_EXECUTABLE that logs every git command, and the dependency provider
 # cmake/CMakePurifierLock.cmake, which names the FetchContent dependency
 # each download belongs to. lock/assemble.py turns the three records into
-# <source dir>/cmake-purifier.lock.json (see nix/lib/lock.nix for the
-# format). The configure arguments go into the lockfile too, since they
+# the lockfile (see nix/lib/lock.nix for the format). The configure arguments go into the lockfile too, since they
 # decide which downloads the build makes; every build of the lockfile
 # passes them first. After the build, `lock` installs the project into a
 # scratch prefix and records what it installed, so that Nix knows the
@@ -22,16 +27,27 @@
 # configure, and then the lockfile misses what the build itself downloads,
 # and records no outputs.
 #
-# `configure` runs `cmake` on the locked downloads, offline. It builds them
-# through Nix (with a GC root in <build dir>/cmake-purifier), copies the
-# FetchContent dependencies into the build directory, and passes CMake an
-# initial cache that points FetchContent at the copies and git at the
-# locked checkouts. mitm-cache replays every other locked download as the
-# proxy of the configure. Arguments after the build directory follow the
-# locked ones. `build` runs `cmake --build` behind the same proxy, for a
-# build that downloads files while it builds.
+# `prefetch` builds every locked download through Nix and keeps it with a
+# garbage-collector root, .cmake-purifier/sources-root. It
+# copies the FetchContent dependencies to .cmake-purifier/sources and
+# writes .cmake-purifier/initial-cache.txt, the initial cache of the
+# everyday loop: `cmake -C .cmake-purifier/initial-cache.txt -B <build
+# dir>` points FetchContent at the copies and git, hg, svn and cvs at the
+# locked checkouts, and sets the configure arguments of the lock run and
+# CMAKE_EXPORT_COMPILE_COMMANDS, for the editor. After a prefetch, the
+# configure, the build and ctest need no network.
 #
-# All three commands run the `nix-build` of the user's own Nix
+# `replay` runs a command with mitm-cache as its HTTP and HTTPS proxy,
+# replaying the locked files from the prefetch. A project needs it for the
+# downloads outside FetchContent and the version-control tools, which
+# CMake makes with its own HTTP client: file(DOWNLOAD) and
+# ExternalProject_Add() with a URL.
+#
+# `publish` builds <installable>, the `release` of buildCMakeProject, and
+# uploads each file in it to the GitHub release <tag> with `gh release
+# upload`.
+#
+# The commands run the `nix-build` and `nix build` of the user's own Nix
 # installation, and `lock` runs its own nix-prefetch-git.
 {
   pkgs,
@@ -50,6 +66,7 @@
   python3,
   python3Packages,
   coreutils,
+  gh,
   # The source of the shared library of the nix-purifiers, which the
   # package overlay passes.
   purifier ? throw "cmake-purifier: the command needs the source of the shared purifier library; take it from this flake's overlay",
@@ -66,7 +83,7 @@ writeShellApplication {
     coreutils
   ];
   meta = {
-    description = "Lock the downloads of a CMake build, and configure and build it offline from the lock";
+    description = "Lock the downloads of a CMake build, and prefetch them for an offline build";
     mainProgram = "cmake-purifier";
   };
   text = ''
@@ -86,9 +103,10 @@ writeShellApplication {
 
     usage() {
       cat >&2 <<'EOF'
-    usage: cmake-purifier lock [--no-build] [-S <source dir>] [<cmake configure arguments>...]
-           cmake-purifier configure -B <build dir> [-S <source dir>] [<cmake configure arguments>...]
-           cmake-purifier build -B <build dir> [<cmake --build arguments>...]
+    usage: cmake-purifier lock [--no-build] [-S <source dir>] [--lockfile <path>] [<cmake configure arguments>...]
+           cmake-purifier prefetch [-S <source dir>] [--lockfile <path>]
+           cmake-purifier replay [-S <source dir>] [--lockfile <path>] -- <command>...
+           cmake-purifier publish [--lockfile <path>] [--repo <owner>/<name>] <tag> <installable>
     EOF
       exit 2
     }
@@ -102,24 +120,29 @@ writeShellApplication {
     command=$1
     shift
 
-    # -S, -B and --no-build are read here, in the separate and the attached
-    # form; every other argument goes to cmake.
+    # -S, --lockfile, --repo and --no-build are read here, -S in the separate
+    # and the attached form. For lock, every other argument goes to cmake,
+    # and for replay, everything after `--` is the command.
     source=.
-    build=
+    lockfile=
+    repo=
     noBuild=
     args=()
     while [ $# -gt 0 ]; do
       case "$1" in
         -S) [ $# -ge 2 ] || usage; source=$2; shift 2 ;;
         -S*) source=''${1#-S}; shift ;;
-        -B) [ $# -ge 2 ] || usage; build=$2; shift 2 ;;
-        -B*) build=''${1#-B}; shift ;;
+        --lockfile) [ $# -ge 2 ] || usage; lockfile=$2; shift 2 ;;
+        --lockfile=*) lockfile=''${1#--lockfile=}; shift ;;
+        --repo) [ $# -ge 2 ] || usage; repo=$2; shift 2 ;;
         --no-build) noBuild=1; shift ;;
+        --) [ "$command" = replay ] || usage; shift; args+=("$@"); break ;;
         *) args+=("$1"); shift ;;
       esac
     done
     source=$(realpath "$source")
-    lockfile=$source/cmake-purifier.lock.json
+    lockfile=$(realpath -m "''${lockfile:-''${CMAKE_PURIFIER_LOCKFILE:-$source/cmake-purifier.lock.json}}")
+    state=$(dirname "$lockfile")/.cmake-purifier
 
     # Waits until something listens on 127.0.0.1:<port>.
     await_port() {
@@ -142,7 +165,6 @@ writeShellApplication {
     }
 
     lock() {
-      [ -z "$build" ] || die "lock takes no -B; it configures in a scratch directory"
       [ -f "$source/CMakeLists.txt" ] || die "$source has no CMakeLists.txt"
       started=$SECONDS
       work=$(mktemp -d)
@@ -254,8 +276,10 @@ writeShellApplication {
       echo "cmake-purifier: locked in $((SECONDS - started)) seconds" >&2
     }
 
-    # Builds the locked downloads and writes the initial cache of <build dir>.
-    prepare() {
+    # Stops unless the lockfile is valid JSON in this command's format and
+    # the project's build definition is the one it was written for. The
+    # Nix library checks the content hash when it reads the lockfile.
+    check_lockfile() {
       [ -f "$lockfile" ] || die "$lockfile does not exist; run cmake-purifier lock first"
       jq -e 'type == "object"' "$lockfile" > /dev/null 2>&1 ||
         die "$lockfile is not valid JSON; restore it from version control, or run cmake-purifier lock to write it again"
@@ -263,23 +287,57 @@ writeShellApplication {
       [ "$format" = "$lockVersion" ] || die "$lockfile has lock format version $format; this cmake-purifier reads version $lockVersion. Run cmake-purifier lock again."
       locked=$(jq -r '.definitionHash // ""' "$lockfile")
       current=$(PATH="${git}/bin:$PATH" bash "$nixlib/definition-hash.sh" "$source")
-      if [ -n "$locked" ] && [ "$locked" != "$current" ]; then
-        echo "cmake-purifier: warning: a CMakeLists.txt or *.cmake file changed since $lockfile was written. If the build now downloads something new, it fails; run cmake-purifier lock to lock it." >&2
-      fi
-      mkdir -p "$build/cmake-purifier"
-      build=$(realpath "$build")
-      tree=$(nix-build --expr \
-        "{ lockFile }: let pkgs = import $nixpkgs { }; in (pkgs.callPackage $nixlib/sources.nix { inherit lockFile; purifier = import $purifierlib { inherit (pkgs) lib; }; }).tree" \
-        --arg lockFile "$lockfile" --out-link "$build/cmake-purifier/sources-root")
-      bash "$nixlib/write-cache.sh" "$tree" "$build/cmake-purifier/sources" "$build/cmake-purifier/cache.cmake" \
-        "$lockedProvider" "$nixlib" "$realGit" "$realHg" "$realSvn" "$realCvs"
+      [ "$locked" = "$current" ] ||
+        die "$lockfile is older than the project: a CMakeLists.txt or *.cmake file changed since it was written. Run cmake-purifier lock to lock the project again."
     }
 
-    # Runs a command with mitm-cache replaying the locked files of
-    # <build dir> as its proxy.
+    prefetch() {
+      [ -f "$source/CMakeLists.txt" ] || die "$source has no CMakeLists.txt"
+      check_lockfile
+      mkdir -p "$state"
+      # Git ignores everything in the directory, this file included.
+      echo '*' > "$state/.gitignore"
+      tree=$(nix-build --expr \
+        "{ lockFile }: let pkgs = import $nixpkgs { }; in (pkgs.callPackage $nixlib/sources.nix { inherit lockFile; purifier = import $purifierlib { inherit (pkgs) lib; }; }).tree" \
+        --arg lockFile "$lockfile" --out-link "$state/sources-root")
+      cache=$state/initial-cache.txt
+      bash "$nixlib/write-cache.sh" "$tree" "$state/sources" "$cache" \
+        "$lockedProvider" "$nixlib" "$realGit" "$realHg" "$realSvn" "$realCvs"
+      # The configure arguments of the lock run, as cache entries.
+      {
+        echo 'set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)'
+        jq -r '.cmakeFlags[]' "$lockfile" | while IFS= read -r flag; do
+          case "$flag" in
+            -D*=*)
+              definition=''${flag#-D}
+              name=''${definition%%=*}
+              value=''${definition#*=}
+              type=STRING
+              if [ "''${name#*:}" != "$name" ]; then
+                type=''${name#*:}
+                name=''${name%%:*}
+              fi
+              printf 'set(%s [==[%s]==] CACHE %s "" FORCE)\n' "$name" "$value" "$type"
+              ;;
+            *) echo "cmake-purifier: the lock run had the configure argument $flag; pass it to cmake yourself" >&2 ;;
+          esac
+        done
+      } >> "$cache"
+      echo "cmake-purifier: prefetched the downloads of $lockfile into $state" >&2
+      echo "cmake-purifier: configure with: cmake -S $source -B <build dir> -C $cache" >&2
+      if jq -e '[.artifacts[] | select(.url != null) | .path] - [.dependencies[].artifact] | length > 0' "$lockfile" > /dev/null; then
+        echo "cmake-purifier: the build downloads files outside FetchContent; run the configure and the build under cmake-purifier replay --" >&2
+      fi
+    }
+
+    # Runs a command with mitm-cache replaying the prefetched files as its
+    # proxy.
     replay() {
-      tree=$(readlink -f "$build/cmake-purifier/sources-root")
-      ca=$build/cmake-purifier/ca
+      [ ''${#args[@]} -gt 0 ] || usage
+      [ -e "$state/sources-root" ] || die "$source has no prefetched downloads; run cmake-purifier prefetch first"
+      check_lockfile
+      tree=$(readlink -f "$state/sources-root")
+      ca=$state/ca
       mkdir -p "$ca"
       [ -f "$ca/ca.cer" ] || {
         openssl genrsa -out "$ca/ca.key" 2048 2>/dev/null
@@ -291,30 +349,32 @@ writeShellApplication {
       trap 'kill "$replayer" 2>/dev/null || true' EXIT
       await_port "$port"
       status=0
-      ( proxy_env "$port" "$ca/ca.cer"; "$@" ) || status=$?
+      ( proxy_env "$port" "$ca/ca.cer"; "''${args[@]}" ) || status=$?
       exit "$status"
     }
 
-    configure() {
-      [ -n "$build" ] || die "configure needs -B <build dir>"
-      [ -f "$source/CMakeLists.txt" ] || die "$source has no CMakeLists.txt"
-      prepare
-      mapfile -t locked < <(jq -r '.cmakeFlags[]' "$lockfile")
-      replay cmake -S "$source" -B "$build" -C "$build/cmake-purifier/cache.cmake" \
-        ''${locked[@]+"''${locked[@]}"} ''${args[@]+"''${args[@]}"}
-    }
-
-    build() {
-      [ -n "$build" ] || die "build needs -B <build dir>"
-      [ -d "$build/cmake-purifier" ] || die "$build was not configured with cmake-purifier configure"
-      build=$(realpath "$build")
-      replay cmake --build "$build" ''${args[@]+"''${args[@]}"}
+    publish() {
+      [ ''${#args[@]} -eq 2 ] || usage
+      tag=''${args[0]}
+      release=$(nix build --no-link --print-out-paths "''${args[1]}")
+      files=()
+      for file in "$release"/*; do
+        [ -f "$file" ] && files+=("$file")
+      done
+      [ ''${#files[@]} -gt 0 ] || die "''${args[1]} built $release, which holds no files to upload"
+      repoArgs=()
+      [ -z "$repo" ] || repoArgs=(--repo "$repo")
+      # The user's own gh, which holds their login, or nixpkgs' one.
+      ghCommand=$(command -v gh || echo ${gh}/bin/gh)
+      "$ghCommand" release upload "$tag" "''${files[@]}" --clobber ''${repoArgs[@]+"''${repoArgs[@]}"}
+      echo "cmake-purifier: uploaded ''${#files[@]} files to the release $tag" >&2
     }
 
     case "$command" in
       lock) lock ;;
-      configure) configure ;;
-      build) build ;;
+      prefetch) prefetch ;;
+      replay) replay ;;
+      publish) publish ;;
       *) usage ;;
     esac
   '';

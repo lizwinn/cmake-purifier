@@ -1,8 +1,21 @@
 # SPDX-License-Identifier: MIT
 #
-# Reads a cmake-purifier lock file (written by `cmake-purifier lock`).
+# readLock: reads a cmake-purifier lockfile (written by `cmake-purifier
+# lock`) into the lock in memory of the purifier contract:
 #
-# The file holds three lists.
+#   { purifier = "cmake-purifier"; entries; outputs; problems; cmake; }
+#
+# `entries` is the lockfile's `artifacts`, needed on every system.
+# `outputs` holds the lockfile's `outputs` under the name of the top-level
+# project(), and is empty for a lockfile without outputs. `problems` holds
+# a message for a lockfile that is incomplete, of another format version,
+# edited, or older than `src`, each naming the command that fixes it; the
+# builder hands the lock to the shared library's checkLock, which fails
+# evaluation with them. A file that is not valid JSON fails evaluation
+# when it is read, with the hint to restore or relock it. `cmake` is the
+# lockfile itself, with the helpers sources.nix uses.
+#
+# The file holds these fields.
 #
 # `artifacts` is every download of the build. An artifact is either a
 # file, `{ path, url, mirrors, hash }` with the SRI hash of the file and a
@@ -33,26 +46,67 @@
 # its path relative to the install prefix, and `targets`, each installed
 # target by name with its CMake `type` and the installed `files` of its
 # artifacts. It is null when the lock run did not build.
-{ lockFile }:
+#
+# `definitionHash` is the hash of the project's build definition
+# (definition-hash.nix), and `contentHash` the SHA-256 of the lockfile
+# itself without its contentHash, as builtins.toJSON writes it. A
+# lockfile whose content does not hash to its contentHash was edited, and
+# fails. With `src`, the project's source as a path, a lockfile whose
+# definitionHash is not the hash of `src` is older than the project, and
+# fails too.
+{
+  src ? null,
+  lockFile ? src + "/cmake-purifier.lock.json",
+}:
 let
   hint = "Restore ${toString lockFile} from version control, or run `cmake-purifier lock` to write it again.";
 
-  lock = builtins.addErrorContext "while reading the cmake-purifier lockfile ${toString lockFile}. ${hint}" (
+  file = builtins.addErrorContext "while reading the cmake-purifier lockfile ${toString lockFile}. ${hint}" (
     builtins.fromJSON (builtins.readFile lockFile)
   );
 
   required = [
     "version"
     "project"
+    "definitionHash"
     "cmakeFlags"
     "artifacts"
     "dependencies"
     "gitCheckouts"
     "outputs"
+    "contentHash"
   ];
-  missing = builtins.filter (key: !(builtins.isAttrs lock && lock ? ${key})) required;
+  missing = builtins.filter (key: !(builtins.isAttrs file && file ? ${key})) required;
 
   supportedVersion = import ./lock-version.nix;
+
+  contentHash =
+    "sha256:" + builtins.hashString "sha256" (builtins.toJSON (removeAttrs file [ "contentHash" ]));
+
+  definitionHash = import ./definition-hash.nix;
+
+  # The first problem only: a lockfile without its keys has no version to
+  # compare, and one of another version has no content hash to check.
+  problems =
+    if missing != [ ] then
+      [
+        "cmake-purifier: ${toString lockFile} is not a cmake-purifier lockfile: it has no ${builtins.concatStringsSep ", " missing}. ${hint}"
+      ]
+    else if file.version != supportedVersion then
+      [
+        "cmake-purifier: ${toString lockFile} has lock format version ${toString file.version}; this library reads version ${toString supportedVersion}. Run `cmake-purifier lock` with the cmake-purifier version that provides this library."
+      ]
+    else if file.contentHash != contentHash then
+      [
+        "cmake-purifier: ${toString lockFile} was edited: its content no longer matches its contentHash. ${hint}"
+      ]
+    else if builtins.isPath src && file.definitionHash != definitionHash src then
+      [
+        "cmake-purifier: ${toString lockFile} is older than the project: a CMakeLists.txt or *.cmake file changed since it was written. Run `cmake-purifier lock` to lock the project again."
+      ]
+    else
+      [ ];
+  usable = problems == [ ];
 
   # A store path name from a file name. Store path names allow
   # [A-Za-z0-9+._?=-], must not start with a dot, and are at most 211
@@ -72,24 +126,24 @@ let
     in
     builtins.substring 0 200 nonEmpty;
 in
-assert
-  missing == [ ]
-  || throw "cmake-purifier: ${toString lockFile} is not a cmake-purifier lockfile: it has no ${builtins.concatStringsSep ", " missing}. ${hint}";
-assert
-  lock.version == supportedVersion
-  || throw "cmake-purifier: ${toString lockFile} has lock format version ${toString lock.version}; this library reads version ${toString supportedVersion}. Run `cmake-purifier lock` with the cmake-purifier version that provides this library.";
-lock
-// {
-  inherit storeName;
+{
+  purifier = "cmake-purifier";
+  entries = if usable then file.artifacts else [ ];
+  outputs = if usable && file.outputs != null then { ${file.project.name} = file.outputs; } else { };
+  inherit problems;
 
-  # The fetch name of an artifact: the last component of its path, made a
-  # valid store name.
-  artifactName = artifact: storeName (baseNameOf artifact.path);
+  cmake = file // {
+    inherit storeName;
 
-  artifactsByPath = builtins.listToAttrs (
-    map (a: {
-      name = a.path;
-      value = a;
-    }) lock.artifacts
-  );
+    # The fetch name of an artifact: the last component of its path, made a
+    # valid store name.
+    artifactName = artifact: storeName (baseNameOf artifact.path);
+
+    artifactsByPath = builtins.listToAttrs (
+      map (a: {
+        name = a.path;
+        value = a;
+      }) file.artifacts
+    );
+  };
 }

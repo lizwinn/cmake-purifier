@@ -28,8 +28,9 @@
   # `nix run github:nix-purifiers/cmake-purifier -- lock` locks the build in
   # the current directory. `nix develop github:nix-purifiers/cmake-purifier`
   # gives a shell with the command, CMake, Ninja, make, the C and C++
-  # compilers of stdenv, and clangd, which is enough to lock, configure and
-  # edit a project whose other dependencies come from FetchContent.
+  # compilers of stdenv, and clangd, which is enough to lock, prefetch,
+  # build and edit a project whose other dependencies come from
+  # FetchContent.
   perSystem =
     { config, pkgs, ... }:
     {
@@ -70,7 +71,7 @@
             checks = import ../../../tests {
               inherit pkgs;
               inherit (self.lib) purifier;
-              overlay = self.overlays.default;
+              inherit (self.lib.cmake-purifier) buildCMakeProject readLock;
               inherit (self.packages.${system}) cmake-purifier;
             };
             treefmt.programs.nixfmt.enable = true;

@@ -2,26 +2,14 @@
 
 A command and a Nix library that build a CMake project in the Nix sandbox
 from a lockfile of everything its build downloads. CMake still configures
-and builds the project. The lockfile records each file and git checkout
-the build fetches, and the outputs the build installs, so Nix can build
-the project, and knows its outputs, with no Nix files in the project
-beyond the lockfile.
+and builds the project. `cmake-purifier lock` configures, builds and
+installs the project once with the network and records every download,
+whatever CMake command makes it: `FetchContent`, `ExternalProject_Add()`,
+`file(DOWNLOAD)` at configure or build time, and wrappers on top of them
+such as CPM.cmake. It writes `cmake-purifier.lock.json`, and Nix builds
+the project from it with no Nix files in the project beyond the lockfile.
 
-- **A lockfile.** `cmake-purifier lock` configures, builds and installs
-  the project once with the network, and records every download, whatever
-  CMake command makes it: `FetchContent`, `ExternalProject_Add()`,
-  `file(DOWNLOAD)` at configure or build time, and wrappers on top of them
-  such as CPM.cmake, from HTTP and HTTPS servers and from git, Mercurial,
-  Subversion and CVS repositories. It writes `cmake-purifier.lock.json`.
-- **Sandboxed builds.** `buildCMakeProject`, which the flake's overlay adds
-  to a package set, builds and installs the project from its lockfile.
-  Its `targets.<name>` and `installed."<path>"` name every output at
-  evaluation time.
-- **Offline interactive builds.** `cmake-purifier configure` and
-  `cmake-purifier build` configure and build a build directory from the
-  same lockfile, with nothing downloaded.
-
-## Use
+## Quickstart
 
 Lock the project, from its source directory, in a shell with the
 command, CMake and a C and C++ compiler:
@@ -31,29 +19,19 @@ nix develop github:nix-purifiers/cmake-purifier
 cmake-purifier lock
 ```
 
-The lock run needs the network and the compilers and libraries the build
-needs, because it runs a real configure, build and install, in a scratch
+The lock run needs the network, and the compilers and libraries the build
+needs, because it runs a real configure, build and install in a scratch
 directory. A project that needs more than the shell above, such as
 OpenSSL for `find_package(OpenSSL)`, locks in its own development shell
-with `cmake-purifier` added to its packages:
-`cmake-purifier.packages.${system}.default`. `CMAKE_BUILD_PARALLEL_LEVEL`
-sets the number of jobs of the lock run's build, which is the number of
-cores by default. Arguments after `lock` go to the configure, and the lockfile
-keeps them: every build of the lockfile passes them first, since options
-such as `-DBUILD_TESTING=ON` decide what a build downloads and installs.
+with `cmake-purifier.packages.${system}.default` added to its packages.
+Arguments after `lock` go to the configure, and the lockfile keeps them:
+every build from the lockfile passes them first, since options such as
+`-DBUILD_TESTING=ON` decide what a build downloads and installs.
+`CMAKE_BUILD_PARALLEL_LEVEL` sets the number of jobs of the lock run's
+build, which is the number of cores by default.
 
-Commit `cmake-purifier.lock.json`. The flake's `overlays.default` adds
-`buildCMakeProject` to a package set:
-
-```nix
-# package.nix
-{ buildCMakeProject, zlib }:
-buildCMakeProject {
-  src = ./.;
-  # Libraries that find_package() looks for come from nixpkgs as usual.
-  buildInputs = [ zlib ];
-}
-```
+Commit `cmake-purifier.lock.json`, and build the project with the
+library's `buildCMakeProject`:
 
 ```nix
 {
@@ -63,166 +41,144 @@ buildCMakeProject {
   outputs = { nixpkgs, cmake-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ cmake-purifier.overlays.default ];
+      pkgs = nixpkgs.legacyPackages.${system};
+      project = cmake-purifier.lib.cmake-purifier.buildCMakeProject {
+        inherit pkgs;
+        src = ./.;
+        # Libraries that find_package() looks for come from nixpkgs as usual.
+        buildInputs = [ pkgs.zlib ];
       };
-      app = pkgs.callPackage ./package.nix { };
     in
     {
-      packages.${system}.default = app;
-      # One app per installed executable, known from the lockfile alone.
-      apps.${system}.greet = {
-        type = "app";
-        program = builtins.head app.targets.greet.files;
-      };
+      # The package is named after the top-level project().
+      packages.${system}.default = project.packages.my-project;
+      checks.${system}.tests = project.tests;
     };
 }
 ```
 
+The result has four attributes, each known at evaluation time:
+
+- `packages.<name>` is the installed project, under the name of the
+  top-level `project()`. Its `targets.<name>` and `installed."<path>"`
+  name every output from the lockfile, without a build.
+- `tests` is the same build with ctest run after it.
+- `release` is a directory with the installed project as one
+  reproducible tarball, which `cmake-purifier publish <tag> <installable>`
+  uploads to a GitHub release with `gh`.
+- `fetches` is the list of downloads, as entries of the shared library
+  [purifier](https://github.com/nix-purifiers/purifier), for SBOM,
+  license and vulnerability tools.
+
 `buildCMakeProject` takes every argument of `stdenv.mkDerivation`, and
 nixpkgs' CMake setup hook runs the build. `nix/lib/build-cmake-project.nix`
-documents the arguments of its own: `lockFile`, `cmakeFlags` (after the
-locked ones), and `fetchers`, which replaces `fetchurl`, `fetchgit`,
-`fetchhg`, `fetchsvn` or `fetchcvs` for credentials or mirrors. The
-downloads are entries of the shared library of the nix-purifiers,
-[purifier](https://github.com/nix-purifiers/purifier), which fetches them.
+documents the arguments of its own: `pkgs`, `src`, `lockFile`,
+`cmakeFlags` (after the locked ones), and `fetchers`. A lockfile kept
+outside `src`, as `lockFile`, is the one the build reads, so a packaging
+flake can lock a project it does not change. Every command takes it as
+`--lockfile <path>` or from the environment variable
+`CMAKE_PURIFIER_LOCKFILE`, which the packaging flake's development shell
+can set to the path it passes as `lockFile`.
 
-To work on the project offline, configure and build a build directory
-from the lockfile:
+`lib.cmake-purifier.readLock { src, lockFile ? … }` reads the lockfile
+into the shape that every nix-purifier shares,
+`{ purifier, entries, outputs, problems }`, for tools that read the locks
+of every ecosystem, such as an SBOM generator.
+
+## Everyday loop
+
+Prefetch the locked downloads once, then work with CMake's own commands
+on the initial cache that the prefetch writes:
 
 ```zsh
-nix run github:nix-purifiers/cmake-purifier -- configure -B build
-nix run github:nix-purifiers/cmake-purifier -- build -B build
+cmake-purifier prefetch
+cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake --build build
+ctest --test-dir build
 ```
 
-`configure` builds the locked downloads through Nix and keeps a GC root to
-them in `build/cmake-purifier`. `build` runs `cmake --build`. A plain
-`cmake --build build` works too, unless the build itself downloads files,
-as `ExternalProject_Add()` with a URL does. `ctest --test-dir build` runs
-the tests as usual.
+The initial cache points FetchContent at copies of the locked sources and
+git, hg, svn and cvs at the locked checkouts, and sets the configure
+arguments of the lock run. A build directory configured with it keeps
+those settings, so later runs of `cmake --build build` reconfigure with
+them too.
 
-For an editor, configure with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. clangd
-and other tools that read `build/compile_commands.json` then find every
-dependency's headers in the build directory, offline.
+A project that downloads files outside FetchContent, with `file(DOWNLOAD)`
+or `ExternalProject_Add()` with a URL, runs the configure and the build
+under `cmake-purifier replay --`, which starts mitm-cache as their HTTP
+and HTTPS proxy, replaying the locked files:
+
+```zsh
+cmake-purifier replay -- cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake-purifier replay -- cmake --build build
+```
+
+`prefetch` says when a project needs this. CMake makes these downloads
+with its own HTTP client, in `cmake -P` scripts that the build runs, so
+only a proxy reaches them.
 
 To add or upgrade a dependency, edit its `FetchContent_Declare()` (or its
 `ExternalProject_Add()`, or its CPM.cmake call), run `cmake-purifier lock`
-again, and configure again. A relock takes about as long as a clean
-configure and build of the project.
+and `cmake-purifier prefetch` again, and configure again. A relock takes
+about as long as a clean configure and build of the project.
 
-### When something is out of step
+## Offline work
 
-Each of these stops the configure, or warns, with a message that names
-the problem and the command to run:
+`cmake-purifier prefetch` builds every download of the lockfile through
+Nix and keeps it alive with a garbage-collector root,
+`.cmake-purifier/sources-root`, beside the lockfile. After a prefetch, the
+configure, the build, ctest and the editor work with the network cut off.
+The directory `.cmake-purifier/` ignores itself in git. The toolchain
+comes from the development shell, which `nix develop` keeps in the store
+once it has built.
 
-- **A dependency that the lockfile does not hold**, for example a new
+## Editor
+
+The initial cache sets `CMAKE_EXPORT_COMPILE_COMMANDS`, so the configure
+writes `build/compile_commands.json`. clangd and other tools that read it
+find every dependency's headers in the prefetched sources, offline. The
+development shell of this flake has clangd; a project's own shell takes
+`clang-tools` from nixpkgs.
+
+## Errors and fixes
+
+Each of these stops the command, the evaluation or the build with a
+message that names the problem and the command that fixes it:
+
+- **A dependency that the lockfile does not hold**, such as a new
   `FetchContent_Declare()`, a new ExternalProject repository or ref, or a
   new git clone: "the build declares the dependency …, which the lockfile
   does not hold. Run `cmake-purifier lock`".
-- **A dependency whose declaration changed**, for example a new version
-  of its URL or tag: "the dependency … now declares the download …, but
-  the lockfile holds …. Run `cmake-purifier lock`".
-- **A build definition newer than the lockfile.** The lockfile records a
-  hash of every `CMakeLists.txt` and `*.cmake` file, and a build warns when
-  it differs. The build still runs, and fails only if it downloads
-  something new.
+- **A dependency whose declaration changed** without a change to the
+  CMake files, such as a version from a `-D` argument: "the dependency …
+  now declares the download …, but the lockfile holds …. Run
+  `cmake-purifier lock`".
+- **A lockfile older than the project.** The lockfile records a hash of
+  every `CMakeLists.txt` and `*.cmake` file. When they hash differently,
+  `prefetch`, the Nix evaluation (for a `src` that is a path) and the
+  sandbox build stop: "… is older than the project … Run
+  `cmake-purifier lock`".
+- **A lockfile that was edited by hand.** The lockfile records the hash of
+  its own content, and an edit, such as a changed hash of a download,
+  stops the evaluation: "… was edited: its content no longer matches its
+  contentHash".
 - **A lockfile that is not valid JSON, or not a cmake-purifier lockfile**:
   the message names the file, and says to restore it from version control
   or run `cmake-purifier lock`.
-- **A lockfile whose hash of a download was edited**: Nix stops the fetch
-  with a hash mismatch that names the download.
 
-## How it works
+## Sources supported and refused
 
-### The lock run
+The lock run records downloads from HTTP and HTTPS servers, through
+mitmproxy as the proxy of CMake and everything it runs, and from git,
+Mercurial, Subversion and CVS repositories, through wrappers that CMake
+finds as its `GIT_EXECUTABLE`, `HG_EXECUTABLE`,
+`Subversion_SVN_EXECUTABLE` and `CVS_EXECUTABLE`. A checkout that names a
+branch locks the commit the branch pointed at, and the next lock moves it.
+A git repository cloned over SSH is locked by the HTTPS URL of the same
+host, since the sandbox has no SSH credentials. `docs/development/product.md`
+describes the lock run and the builds from the lockfile in full.
 
-`cmake-purifier lock` runs the configure, the build and an install into a
-scratch prefix with three recorders:
-
-- **mitmproxy**, as the HTTP and HTTPS proxy of CMake and everything it
-  runs, with its certificate authority in `SSL_CERT_FILE`. It records every
-  response by URL and SHA-256. When the user's environment names a proxy
-  of its own, mitmproxy forwards to it.
-- **Wrappers of git, hg, svn and cvs**, in `GIT_EXECUTABLE`,
-  `HG_EXECUTABLE`, `Subversion_SVN_EXECUTABLE` and `CVS_EXECUTABLE`. Each
-  logs every command CMake's modules run with its tool and passes it on,
-  with the user's own proxy settings; svn gets them as `--config-option`
-  arguments, since it reads no proxy variables. The logs show which
-  repository each checkout came from and which ref it asked for.
-- **A dependency provider**, injected through
-  `CMAKE_PROJECT_TOP_LEVEL_INCLUDES`, which records each
-  `FetchContent_MakeAvailable()` dependency by name and where FetchContent
-  put it.
-
-The lockfile then holds every file the build fetched over HTTP or HTTPS,
-under the URL the build asked for, and every checkout at the revision the
-build checked out. A git checkout is hashed with `nix-prefetch-git`, the
-hash `fetchgit` checks. A Mercurial, Subversion or CVS checkout is hashed
-by building the nixpkgs fetcher of the sandbox build (`fetchhg`,
-`fetchsvn`, `fetchcvs`) with a wrong hash and reading the right one from
-the error, so the hash is the one that build checks, keyword expansion
-and time zone included. A CVS checkout without a tag or a date locks the
-time of the lock run as its date.
-
-A checkout that names a branch, or no ref at all, locks the commit the
-branch pointed at during the lock run, and the lockfile keeps the branch
-as the ref the build asks for, so the next `cmake-purifier lock` moves it
-to the branch's new commit. A git repository cloned over SSH is locked by
-the HTTPS URL of the same host, since the sandbox has no SSH credentials;
-the lock run keeps the SSH URL only when the host does not serve the
-repository over HTTPS. A `GIT_SUBMODULES` list locks the repository with
-all of its submodules, and a build from the lockfile empties the
-submodules the list leaves out, as git leaves a submodule it does not
-initialize. A redirect
-counts as the file it leads to, and its target is left out, since such
-targets are often signed URLs that expire. The install's manifest gives
-the installed files, and CMake's File API gives the target each one
-belongs to.
-
-The lock run configures with `CMAKE_BUILD_TYPE=Release` and
-`CMAKE_INSTALL_LIBDIR=lib`, as nixpkgs' CMake setup hook does, so that the
-recorded outputs are the outputs of the sandbox build. A
-`-DCMAKE_BUILD_TYPE` among the arguments of `lock` replaces the first, and
-the lockfile keeps it for the sandbox build too. `--no-build` stops the
-lock run after the configure, for a project whose build cannot run on the
-machine that locks; the lockfile then records no outputs, and misses
-anything the build itself downloads.
-
-### A build from the lockfile
-
-The sandbox build and `cmake-purifier configure` give every download its
-locked copy:
-
-- FetchContent dependencies come from `FETCHCONTENT_SOURCE_DIR_<NAME>`,
-  which an initial cache sets for each, with
-  `FETCHCONTENT_FULLY_DISCONNECTED`. The sources are copied into the build
-  directory, because some projects write into their dependencies' source
-  trees.
-- Git, Mercurial, Subversion and CVS checkouts go to shims, which the
-  initial cache names in `GIT_EXECUTABLE`, `HG_EXECUTABLE`,
-  `Subversion_SVN_EXECUTABLE` and `CVS_EXECUTABLE`. They answer the
-  checkout and update steps of `ExternalProject_Add()` and of FetchContent
-  from the locked checkout of the repository and ref.
-- Every other download goes to mitm-cache, as the HTTP and HTTPS proxy,
-  which replays the locked files. In the sandbox its setup hook starts it,
-  and `cmake-purifier configure` and `build` start it around their CMake
-  run.
-
-A second dependency provider checks every `FetchContent_MakeAvailable()`
-call, and the shims check every checkout. A dependency the
-lockfile does not hold stops the build with a hint to run
-`cmake-purifier lock`. After the install, the sandbox build checks that
-every output the lockfile names is in the package.
-
-Both kinds of build set `FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER`, as the
-lock run does, so a dependency declared with `FIND_PACKAGE_ARGS` comes from
-its locked source rather than from whatever `find_package()` finds on the
-machine that runs the lock.
-
-## Limits
-
-Each of these follows from what a build from a lockfile can know.
+These are refused or unsupported:
 
 - **A download by a program that ignores the proxy variables or
   `SSL_CERT_FILE`.** The recording and the replay both work as the proxy
@@ -235,24 +191,29 @@ Each of these follows from what a build from a lockfile can know.
 - **Two URLs that differ only in their query.** mitm-cache replays a URL
   from the path of its file, which carries no query, so the lock run
   refuses such a pair with an error that names both URLs.
-- **A repository that needs a login.** The sandbox has no credentials, so
-  the default fetchers cannot fetch from a repository that serves no
-  anonymous HTTPS, or from a CVS server that needs a login.
-  `buildCMakeProject` takes fetchers that have the credentials in
-  `fetchers`, such as nixpkgs' fetchgit with a `netrcPhase` as
-  `fetchers.fetchgit`.
+- **A repository that needs a login**, with the default fetchers. The
+  sandbox has no credentials. `buildCMakeProject` takes fetchers that
+  have them in `fetchers`, such as nixpkgs' fetchgit with a `netrcPhase`
+  as `fetchers.fetchgit`; a company mirror goes in `fetchers.fetchurl`.
 - **CVS on aarch64-linux.** nixpkgs' cvs aborts on aarch64-linux, in the
-  2006 copy of gnulib's vasnprintf that it bundles, on every export and
-  checkout. A CVS checkout locks and builds on x86_64-linux only, and the
-  checks skip the CVS fixture on aarch64-linux with a message.
+  2006 copy of gnulib's vasnprintf that it bundles. A CVS checkout locks
+  and builds on x86_64-linux only.
 - **Version-control commands other than the checkout steps, on a locked
   checkout.** A locked checkout holds the files of its revision and no
-  history, since the fetchers store only the files, which keeps their
-  hashes reproducible. The shims answer the commands of a checkout and of
-  its update steps, `git rev-parse`, and `git describe` (with the ref the
-  build asked for). Any other command on a locked checkout, such as
+  history, which keeps its hash reproducible. The shims answer the
+  commands of a checkout and of its update steps, `git rev-parse`, and
+  `git describe`. Any other command on a locked checkout, such as
   `git log` in a dependency's CMakeLists.txt, fails with a message that
   names it.
+
+## Real-world projects
+
+The fixtures in `tests/fixtures` cover each kind of download above. A
+trial on [libcpr/cpr](https://github.com/libcpr/cpr) 1.15.1, which takes
+curl, zlib-ng, googletest and mongoose from FetchContent archives and
+libpsl from a FetchContent git checkout, is pending.
+
+## Credits
 
 cmake-purifier follows the design of
 [sbt-purifier](https://github.com/nix-purifiers/sbt-purifier), which was
