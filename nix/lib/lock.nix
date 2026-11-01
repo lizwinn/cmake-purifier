@@ -2,19 +2,29 @@
 #
 # Reads a cmake-purifier lock file (written by `cmake-purifier lock`).
 #
-# The file holds two lists. `artifacts` is every download of the build.
-# An artifact is either a file, `{ path, url, hash }` with the SRI hash of
-# the file, or a git checkout, `{ path, git = { url, rev, submodules },
-# hash }` with the SRI NAR hash of the checkout as fetchgit makes it.
-# `path` is an opaque relative name: `<name>/<file name>` for a file and
-# `<name>` for a checkout, where <name> is the FetchContent name.
+# The file holds three lists.
 #
-# `dependencies` is every FetchContent dependency, by its FetchContent
-# `name`. Its `artifact` is the path of its download. A dependency on a
-# file also says whether FetchContent `extract`s it.
+# `artifacts` is every download of the build. An artifact is either a
+# file, `{ path, url, mirrors, hash }` with the SRI hash of the file and a
+# list of further URLs that serve the same bytes, or a git
+# checkout, `{ path, git = { url, rev, submodules }, hash }` with the SRI
+# NAR hash of the checkout as fetchgit makes it. These are the download
+# entries of the shared nix-purifiers library. A file's `path` is
+# `<scheme>/<host>/<path>` of its URL, where mitm-cache replays it; a
+# checkout's `path` is `git/<scheme>/<host>/<path>/<commit>`.
 #
-# The two kinds of artifact are the download entries of the shared
-# nix-purifiers library, where `git.submodules` is required.
+# `dependencies` is every FetchContent_MakeAvailable() dependency, by its
+# FetchContent `name`. Its `artifact` is the path of its download. A
+# dependency on a file also says whether FetchContent `extract`s it.
+#
+# `gitCheckouts` is every git checkout the build makes, by repository
+# `url` and the `ref` the build checks out, with the path of its
+# `artifact`.
+#
+# `outputs` is what the install writes: `files`, every installed file by
+# its path relative to the install prefix, and `targets`, each installed
+# target by name with its CMake `type` and the installed `files` of its
+# artifacts. It is null when the lock run did not build.
 { lockFile }:
 let
   lock = builtins.fromJSON (builtins.readFile lockFile);

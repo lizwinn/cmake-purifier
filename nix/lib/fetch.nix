@@ -7,9 +7,11 @@
 # store path depends only on its name and hash, so the default fetcher and
 # nixpkgs' fetchurl produce the same paths.
 #
+# An artifact's `url` comes first and its `mirrors` after it.
+#
 # `fetchurl`, when given, replaces the built-in fetcher. It is called with
-# { name, url, hash } and is the place for credentials (nixpkgs' fetchurl
-# takes `netrcPhase`) or mirrors.
+# { name, urls, hash } and is the place for credentials (nixpkgs' fetchurl
+# takes `netrcPhase`) or more mirrors.
 {
   lock,
   fetchurl ? null,
@@ -17,19 +19,19 @@
 artifact:
 let
   name = lock.artifactName artifact;
+  urls = [ artifact.url ] ++ artifact.mirrors;
 in
 if fetchurl != null then
   fetchurl {
-    inherit name;
-    inherit (artifact) url hash;
+    inherit name urls;
+    inherit (artifact) hash;
   }
 else
   derivation {
-    inherit name;
+    inherit name urls;
     builder = "builtin:fetchurl";
     system = "builtin";
     inherit (artifact) url;
-    urls = [ artifact.url ];
     outputHash = artifact.hash;
     outputHashAlgo = "sha256";
     outputHashMode = "flat";

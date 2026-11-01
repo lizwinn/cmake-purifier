@@ -20,6 +20,11 @@ let
     doCheck = true;
   };
 
+  # Downloads outside FetchContent_MakeAvailable(): file(DOWNLOAD) at
+  # configure and build time, CPM.cmake, and ExternalProject_Add() with a
+  # URL and with git.
+  extras = withOverlay.buildCMakeProject { src = ./fixtures/extras; };
+
   # The fixture with one more download, built from the fixture's lockfile,
   # which does not hold it.
   unlocked = withOverlay.buildCMakeProject {
@@ -47,6 +52,46 @@ in
   # The package name and version come from the lockfile's project().
   basic-name = pkgs.runCommand "basic-name" { } ''
     [ ${basic.pname} = purifier-basic ] && [ ${basic.version} = 1.2.3 ]
+    touch $out
+  '';
+
+  # The outputs come from the lockfile at evaluation time: the target
+  # greet and the file it installs, with no build needed to know them.
+  # fmt installs itself as part of the fixture, so its static library is
+  # an output too.
+  basic-outputs =
+    assert basic.targets.greet.type == "EXECUTABLE";
+    assert basic.targets.greet.files == [ "${basic}/bin/greet" ];
+    assert basic.targets.fmt.files == [ "${basic}/lib/libfmt.a" ];
+    assert builtins.elem "include/fmt/format.h" (builtins.attrNames basic.installed);
+    pkgs.runCommand "basic-outputs" { } ''
+      [ "$(${builtins.head basic.targets.greet.files} --name outputs)" = "Hello, outputs!" ]
+      touch $out
+    '';
+
+  inherit extras;
+
+  # Every installed file of extras is an output, the license the build
+  # downloaded included.
+  extras-outputs =
+    assert extras.targets.extras.files == [ "${extras}/bin/extras" ];
+    assert
+      builtins.attrNames extras.installed == [
+        "bin/extras"
+        "share/purifier-extras/fmt-LICENSE"
+      ];
+    pkgs.runCommand "extras-outputs" { } ''
+      grep -q 'Victor Zverovich' ${extras.installed."share/purifier-extras/fmt-LICENSE"}
+      touch $out
+    '';
+
+  # The program runs with argparse and cxxopts from CPM.cmake, zlib from
+  # an ExternalProject archive and expected-lite from an ExternalProject
+  # checkout, and the license the build downloaded is installed.
+  extras-runs = pkgs.runCommand "extras-runs" { } ''
+    out_text=$(${extras}/bin/extras --count 5)
+    [ "$out_text" = "count 5, zlib 1.3.1" ] || { echo "extras printed: $out_text" >&2; exit 1; }
+    grep -q 'Copyright (c) 2012 - present, Victor Zverovich' ${extras}/share/purifier-extras/fmt-LICENSE
     touch $out
   '';
 

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "project": {
     "name": "purifier-basic",
     "version": "1.2.3"
@@ -7,7 +7,7 @@
   "cmakeFlags": [],
   "artifacts": [
     {
-      "path": "argparse",
+      "path": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
       "git": {
         "url": "https://github.com/p-ranav/argparse.git",
         "rev": "3eda91b2e1ce7d569f84ba295507c4cd8fd96910",
@@ -16,30 +16,78 @@
       "hash": "sha256-w4IU8Yr+zPFOo7xR4YMHlqNJcEov4KU/ppDYrgsGlxM="
     },
     {
-      "path": "doctest/doctest.h",
+      "path": "https/github.com/doctest/doctest/releases/download/v2.4.11/doctest.h",
       "url": "https://github.com/doctest/doctest/releases/download/v2.4.11/doctest.h",
+      "mirrors": [],
       "hash": "sha256-RPqgOOnD+XKO+9oUN0jQESTqCif0v3jzWhXY+rLgOfs="
     },
     {
-      "path": "fmt/fmt-11.1.4.zip",
+      "path": "https/github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip",
       "url": "https://github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip",
+      "mirrors": [],
       "hash": "sha256-SbA5YBGW4adl6BxcmgWmHtPTPyOzlhMj1zIuT+IT0+Y="
     }
   ],
   "dependencies": [
     {
       "name": "argparse",
-      "artifact": "argparse"
+      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910"
     },
     {
       "name": "doctest",
-      "artifact": "doctest/doctest.h",
+      "artifact": "https/github.com/doctest/doctest/releases/download/v2.4.11/doctest.h",
       "extract": false
     },
     {
       "name": "fmt",
-      "artifact": "fmt/fmt-11.1.4.zip",
+      "artifact": "https/github.com/fmtlib/fmt/releases/download/11.1.4/fmt-11.1.4.zip",
       "extract": true
     }
-  ]
+  ],
+  "gitCheckouts": [
+    {
+      "url": "https://github.com/p-ranav/argparse.git",
+      "ref": "v3.2",
+      "artifact": "git/https/github.com/p-ranav/argparse.git/3eda91b2e1ce7d569f84ba295507c4cd8fd96910"
+    }
+  ],
+  "outputs": {
+    "files": [
+      "bin/greet",
+      "include/fmt/args.h",
+      "include/fmt/base.h",
+      "include/fmt/chrono.h",
+      "include/fmt/color.h",
+      "include/fmt/compile.h",
+      "include/fmt/core.h",
+      "include/fmt/format-inl.h",
+      "include/fmt/format.h",
+      "include/fmt/os.h",
+      "include/fmt/ostream.h",
+      "include/fmt/printf.h",
+      "include/fmt/ranges.h",
+      "include/fmt/std.h",
+      "include/fmt/xchar.h",
+      "lib/cmake/fmt/fmt-config-version.cmake",
+      "lib/cmake/fmt/fmt-config.cmake",
+      "lib/cmake/fmt/fmt-targets-release.cmake",
+      "lib/cmake/fmt/fmt-targets.cmake",
+      "lib/libfmt.a",
+      "lib/pkgconfig/fmt.pc"
+    ],
+    "targets": {
+      "fmt": {
+        "type": "STATIC_LIBRARY",
+        "files": [
+          "lib/libfmt.a"
+        ]
+      },
+      "greet": {
+        "type": "EXECUTABLE",
+        "files": [
+          "bin/greet"
+        ]
+      }
+    }
+  }
 }

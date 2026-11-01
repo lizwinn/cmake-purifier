@@ -1,29 +1,40 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# The interactive test: `cmake-purifier configure` on the fixture, outside
-# the sandbox. The program must build and run, its tests must pass, and
-# FetchContent must have populated nothing itself: a populated dependency
-# leaves a <name>-src or <name>-subbuild directory under _deps.
+# The interactive test: `cmake-purifier configure` and `cmake-purifier
+# build` on both fixtures, outside the sandbox. The programs must build
+# and run, and the basic fixture's tests must pass. Run it with the hosts
+# of the fixtures' downloads unreachable, to show that nothing outside the
+# lockfile is downloaded; on a machine with the network, the check below
+# still shows that FetchContent populated none of basic's dependencies
+# itself, since a populated dependency leaves a <name>-src or
+# <name>-subbuild directory under _deps.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-build=$(mktemp -d)
-trap 'chmod -R u+w "$build"; rm -rf "$build"' EXIT
+scratch=$(mktemp -d)
+trap 'chmod -R u+w "$scratch"; rm -rf "$scratch"' EXIT
 
 run() {
   nix shell 'nixpkgs#gcc' 'nixpkgs#gnumake' 'nixpkgs#cmake' "$root#cmake-purifier" -c "$@"
 }
 
-run cmake-purifier configure -S "$root/tests/fixtures/basic" -B "$build"
-run cmake --build "$build" -j4
-[ "$("$build/greet" --name interactive)" = "Hello, interactive!" ]
-run ctest --test-dir "$build" --output-on-failure
-
-populated=$(find "$build/_deps" -mindepth 1 -maxdepth 1 \( -name '*-src' -o -name '*-subbuild' \))
+basic=$scratch/basic
+run cmake-purifier configure -S "$root/tests/fixtures/basic" -B "$basic"
+run cmake-purifier build -B "$basic" -j4
+[ "$("$basic/greet" --name interactive)" = "Hello, interactive!" ]
+run ctest --test-dir "$basic" --output-on-failure
+populated=$(find "$basic/_deps" -mindepth 1 -maxdepth 1 \( -name '*-src' -o -name '*-subbuild' \))
 if [ -n "$populated" ]; then
   echo "FetchContent populated a dependency itself:" >&2
-  ls "$build/_deps" >&2
+  echo "$populated" >&2
   exit 1
 fi
+
+extras=$scratch/extras
+run cmake-purifier configure -S "$root/tests/fixtures/extras" -B "$extras"
+run cmake-purifier build -B "$extras" -j4
+[ "$("$extras/extras" --count 7)" = "count 7, zlib 1.3.1" ]
+grep -q 'Victor Zverovich' "$extras/fmt-LICENSE"
+
 echo "interactive: passed"

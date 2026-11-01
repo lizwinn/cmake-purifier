@@ -1,28 +1,47 @@
 # Testing
 
-The tests come in two layers.
+The tests come in three layers.
 
 1. **Flake checks** (`tests/default.nix`) run in the sandbox under
    `nix flake check`:
    - `basic` builds `tests/fixtures/basic` with `buildCMakeProject` and
-     runs its ctest suite. The fixture downloads one of each kind the lock
-     records: an archive (fmt), a git checkout declared in a subdirectory
-     (argparse, in `lib/`), and a single header that FetchContent does not
-     extract (doctest).
-   - `basic-runs` runs the installed program, and `basic-name` checks that
-     the package name and version come from the fixture's `project()`.
-   - `unlocked-fails` adds a dependency the fixture's lockfile does not
-     hold, and checks that the configure stops with the hint to relock.
+     runs its ctest suite. The fixture has a FetchContent dependency of
+     each kind: an archive (fmt), a git checkout declared in a
+     subdirectory (argparse, in `lib/`), and a single header that
+     FetchContent does not extract (doctest).
+   - `extras` builds `tests/fixtures/extras`, whose downloads happen
+     outside `FetchContent_MakeAvailable()`: `file(DOWNLOAD)` at configure
+     time (CPM.cmake) and at build time (fmt's license, in a `cmake -P`
+     script), CPM.cmake packages through `FetchContent_MakeAvailable()`
+     (argparse) and `FetchContent_Populate()` (cxxopts, `DOWNLOAD_ONLY`),
+     and `ExternalProject_Add()` with an archive that it builds (zlib) and
+     with a git checkout (expected-lite).
+   - `basic-runs` and `extras-runs` run the installed programs, and
+     `basic-name` checks that the package name and version come from the
+     fixture's `project()`.
+   - `basic-outputs` and `extras-outputs` check, at evaluation time, the
+     `targets` and `installed` the lockfiles name, and use them. Every
+     sandbox build also checks that it installed each file its lockfile
+     names.
+   - `unlocked-fails` adds a dependency the basic lockfile does not hold,
+     and checks that the configure stops with the hint to relock.
    - `nix-library` runs `tests/nix-library.nix`, which applies the library
-     to a hand-written lockfile with fetchers that download nothing, and
-     checks the initial cache that `nix/lib/write-cache.sh` writes.
+     to a hand-written lockfile with fetchers that download nothing. It
+     checks the source tree, the initial cache that
+     `nix/lib/write-cache.sh` writes, and the answers of the git shim.
    - `cmake-purifier` builds the command, which runs shellcheck on it.
    - `treefmt` checks the formatting of the Nix files.
 2. **The interactive test** (`tests/interactive.sh`) runs outside the
-   sandbox. It configures the fixture in a scratch build directory with
-   `cmake-purifier configure`, builds it, runs the program and its tests,
-   and checks that FetchContent downloaded nothing into the build
-   directory.
+   sandbox. It configures and builds both fixtures with
+   `cmake-purifier configure` and `cmake-purifier build`, runs their
+   programs and the basic tests, and checks that FetchContent populated
+   none of the basic dependencies itself. Run it with the hosts of the
+   fixtures' downloads unreachable, to show that the builds download
+   nothing.
+3. **The relock** (`tests/relock-fixtures.sh`) runs the lock run on both
+   fixtures, with the network. CI runs it and fails when a lockfile
+   changes, so the lock run must reproduce the committed lockfiles.
 
-The fixture's lockfile is test data. `tests/relock-fixtures.sh` renews it,
-and it needs the network.
+CI (`.github/workflows/check.yml`) runs all three layers on x86_64-linux,
+evaluates the checks of aarch64-linux there, and builds the flake checks
+on an aarch64-linux runner.
