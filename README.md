@@ -73,7 +73,8 @@ under `cmake-purifier replay --`, which starts mitm-cache as their HTTP
 and HTTPS proxy, replaying the locked files:
 
 ```zsh
-cmake-purifier replay -- cmake -B build -C .cmake-purifier/initial-cache.txt
+cmake-purifier replay -- cmake -B build -C \
+  .cmake-purifier/initial-cache.txt
 cmake-purifier replay -- cmake --build build
 ```
 
@@ -114,7 +115,8 @@ in the project's repository or in another one:
   inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
   inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
 
-  outputs = { nixpkgs, cmake-purifier, ... }:
+  outputs =
+    { nixpkgs, cmake-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -170,15 +172,15 @@ For an ad hoc build, the builder can also be evaluated directly from the
 project root. Replace the example package name with one from your project:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.cmake-purifier.buildCMakeProject { src = ./.; }).packages.my-project'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.cmake-purifier.buildCMakeProject { src = ./.; })
+.packages.my-project'
 ```
 
 This uses the purifier's pinned nixpkgs, matching the lock command above.
@@ -325,19 +327,24 @@ ctest --test-dir build
 Then build it with Nix from the same directory, with the same inputs:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.cmake-purifier.buildCMakeProject {
-    src = ./.;
-    nativeBuildInputs = [ pkgs.perl pkgs.pkg-config pkgs.meson pkgs.ninja pkgs.python3 ];
-    buildInputs = [ pkgs.openssl ];
-  }).packages.cpr'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/cmake-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.cmake-purifier.buildCMakeProject {
+  src = ./.;
+  nativeBuildInputs = [
+    pkgs.perl
+    pkgs.pkg-config
+    pkgs.meson
+    pkgs.ninja
+    pkgs.python3
+  ];
+  buildInputs = [ pkgs.openssl ];
+}).packages.cpr'
 ```
 
 cpr's tests need no network: they talk to a server that the tests start
