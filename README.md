@@ -5,31 +5,12 @@ Nix-resolved dependencies. Use the normal build and test commands in your
 working tree; building the project itself in the Nix sandbox is an
 optional next step.
 
-## Installation
-
-Install the integration into your Nix profile once:
-
-```sh
-nix profile install 'github:nix-purifiers/cmake-purifier'
-```
-
-This installs the purifier CLI. The workflow below prepares the native
-tool's cache, hook or environment; follow that activation step before using
-your usual commands. The ordinary tool itself remains your normal
-installation unless the setup explicitly supplies a toolchain.
-
-`nix shell` makes an integration available temporarily instead of installing
-it. Keep using the activation steps below where a project environment or
-prefetched cache is required.
-
 ## Quickstart
 
-Install Nix, then run the following from your existing project's root.
-The setup prepares the locked dependencies and the integration that
-CMake's normal commands use:
+From the project root:
 
 ```zsh
-nix develop github:nix-purifiers/cmake-purifier
+nix shell 'github:nix-purifiers/cmake-purifier'
 cmake-purifier lock
 cmake-purifier prefetch
 cmake -B build -C .cmake-purifier/initial-cache.txt
@@ -48,6 +29,9 @@ For downloads outside FetchContent, use the replay commands described in
 
 Sandboxed builds of the whole project are an optional
 [next step](#building-the-project-with-nix).
+
+For persistent use, add these packages through your usual Nix configuration.
+
 
 ## Development loop
 
