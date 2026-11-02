@@ -96,7 +96,8 @@ in the project's repository or in another one:
 
 ```nix
 {
-  inputs.cmake-purifier.url = "github:nix-purifiers/cmake-purifier";
+  inputs.cmake-purifier.url =
+    "github:nix-purifiers/cmake-purifier";
   inputs.nixpkgs.follows = "cmake-purifier/nixpkgs";
 
   outputs =
@@ -107,10 +108,13 @@ in the project's repository or in another one:
         inherit system;
         overlays = [ cmake-purifier.overlays.default ];
       };
-      project = pkgs.cmake-purifier.buildCMakeProject { src = ./.; };
+      project = pkgs.cmake-purifier.buildCMakeProject {
+        src = ./.;
+      };
     in
     {
-      packages.${system}.default = project.packages.my-project;
+      packages.${system}.default =
+        project.packages.my-project;
       checks.${system}.tests = project.tests;
     };
 }
