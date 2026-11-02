@@ -10,7 +10,7 @@ optional next step.
 From the project root:
 
 ```zsh
-nix shell 'github:nix-purifiers/cmake-purifier'
+nix shell 'github:nix-purifiers/cmake-purifier#toolchain'
 cmake-purifier lock
 cmake-purifier prefetch
 cmake -B build -C .cmake-purifier/initial-cache.txt
@@ -184,8 +184,8 @@ The directory `.cmake-purifier/` ignores itself in git.
 
 `prefetch` realizes what the lockfile lists, and a CMake lockfile lists
 only the project's downloads. The compilers, CMake itself and clangd come
-from the development shell, which `nix develop` keeps in the store once
-it has built.
+from your toolchain. The `#toolchain` package supplies them through
+`nix shell`.
 
 ## Editor
 
@@ -219,8 +219,7 @@ message that names the problem and the command that fixes it:
   contentHash".
 - **An output that the sandbox build did not install**: "the lockfile
   names the output …, which the install did not write". The lock run
-  builds with every program on the `PATH` of the shell, and `nix develop`
-  keeps the system `PATH` after the one of the shell. A build that does
+  builds with every program on your current `PATH`. A build that does
   more when it finds a program installs more in the lock run than in the
   sandbox. The build of curl is one such build: it writes its man pages
   when it finds Perl. Add the program to the inputs of the package and of

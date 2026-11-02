@@ -35,6 +35,19 @@
     { config, pkgs, ... }:
     {
       packages.default = config.packages.cmake-purifier;
+      # The interactive toolchain is a package so nix shell can expose it
+      # without entering the derivation's build environment.
+      packages.toolchain = pkgs.buildEnv {
+        name = "cmake-purifier-toolchain";
+        paths = [
+          config.packages.cmake-purifier
+          pkgs.cmake
+          pkgs.ninja
+          pkgs.gnumake
+          pkgs.stdenv.cc
+          pkgs.clang-tools
+        ];
+      };
       devShells.default = pkgs.mkShell {
         packages = [
           config.packages.cmake-purifier
