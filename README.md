@@ -348,6 +348,5 @@ build that runs them sets `enableParallelChecking = false;` beside `src`.
 
 ## Credits
 
-cmake-purifier follows the design of
-[sbt-purifier](https://github.com/nix-purifiers/sbt-purifier), which was
-inspired by nixcloud's [cargo (libnix)](https://github.com/nixcloud/cargo).
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
